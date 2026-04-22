@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: f-fit-app
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npx tsx server.ts
+    envVars:
+      - key: GEMINI_API_KEY
+        scope: build,runtime
+      - key: NODE_ENV
+        value: production

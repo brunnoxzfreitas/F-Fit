@@ -1,0 +1,40 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^1.50.1",
+    "@tailwindcss/vite": "^4.2.4",
+    "@vitejs/plugin-react": "^5.0.4",
+    "better-sqlite3": "^12.9.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.38.0",
+    "multer": "^2.1.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-easy-crop": "^5.5.7",
+    "react-image-crop": "^11.0.10",
+    "recharts": "^3.8.1",
+    "vite": "^6.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.5.0",
+    "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
