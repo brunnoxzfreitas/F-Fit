@@ -446,6 +446,17 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
+  // Serve built frontend in production
+  if (process.env.NODE_ENV === "production") {
+    const staticPath = path.join(process.cwd(), 'dist');
+    if (fs.existsSync(staticPath)) {
+      app.use(express.static(staticPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(staticPath, 'index.html'));
+      });
+    }
+  }
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

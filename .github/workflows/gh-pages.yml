@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Backend API URL to embed in the build'
+        required: false
 
 jobs:
   build-and-deploy:
@@ -27,6 +32,7 @@ jobs:
           # Set PUBLIC_PATH so Vite builds with correct base for GitHub Pages.
           # This sets base to '/REPO_NAME/' automatically.
           PUBLIC_PATH: "/${{ github.event.repository.name }}/"
+          VITE_APP_URL: ${{ github.event.inputs.app_url || 'http://localhost:3000' }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v3
