@@ -162,14 +162,22 @@ async function startServer() {
   app.post("/api/users", (req, res) => {
     const { name, email, password, type, age, objective, bio, requesterId } = req.body;
 
-    // Security Check: Only admins can create instructors or other admins
-    if (type === 'admin' || type === 'instrutor') {
+    // Security Check: Admins can create admins; admins or instructors can create instructors
+    if (type === 'admin') {
       if (!requesterId) {
         return res.status(403).json({ error: "Acesso negado. Apenas administradores podem criar este tipo de usuário." });
       }
       const requester = db.prepare("SELECT type FROM users WHERE id = ?").get(requesterId) as { type: string } | undefined;
       if (!requester || requester.type !== 'admin') {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores podem criar este tipo de usuário." });
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores podem criar administradores." });
+      }
+    } else if (type === 'instrutor') {
+      if (!requesterId) {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores ou instrutores podem criar instrutores." });
+      }
+      const requester = db.prepare("SELECT type FROM users WHERE id = ?").get(requesterId) as { type: string } | undefined;
+      if (!requester || (requester.type !== 'admin' && requester.type !== 'instrutor')) {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores ou instrutores podem criar instrutores." });
       }
     }
 
