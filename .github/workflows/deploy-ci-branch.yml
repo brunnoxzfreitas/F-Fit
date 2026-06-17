@@ -22,14 +22,35 @@ jobs:
           node -v
           npm -v
 
+      - name: Show workspace
+        run: |
+          pwd
+          ls -la
+
       - name: Install dependencies
         run: |
           npm ci --prefer-offline --no-audit --no-fund
         env:
           CI: true
 
-      - name: Build
-        run: npm run build
+      - name: Show node_modules and package.json
+        run: |
+          ls -la node_modules || true
+          node -v
+          npm -v
+          echo "--- package.json ---"
+          cat package.json
+
+      - name: Build (with verbose output)
+        run: |
+          npm run build 2>&1 | tee build.log || true
+          echo "--- tail build log ---"
+          tail -n 200 build.log || true
+          # fail if build log contains 'error' to mark job failing
+          if grep -i "error" build.log; then
+            echo "Build contained errors";
+            exit 1;
+          fi
 
       - name: Checkout main branch
         uses: actions/checkout@v4
