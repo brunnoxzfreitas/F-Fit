@@ -6,41 +6,24 @@
     <title>F-fit</title>
   </head>
   <body>
-        <div id="root"></div>
-    <script>
-      (async function loadAppropriateApp(){
-        // If the dev app exists (Vite), load it. Otherwise, inject the static fallback.
-        try {
-          const probe = await fetch('/src/main.tsx', { method: 'GET' });
-          if (probe && probe.ok) {
-              try {
-                await import('/src/main.tsx');
-                // mark dev app presence so fallback won't run
-                window.__ff_dev_loaded = true;
-                console.log('Loaded Vite dev app (src/main.tsx)');
-                return;
-              } catch (e) {
-                console.warn('Error importing dev module, falling back', e);
-              }
-          }
-        } catch (e) {
-          // network error or not served — fall back
-        }
-
-        // inject fallback assets
-        if (!window.__ff_fallback_injected) {
-          window.__ff_fallback_injected = true;
-          const l = document.createElement('link');
-          l.rel = 'stylesheet';
-          l.href = './fallback.css';
-          document.head.appendChild(l);
-
-          const s = document.createElement('script');
-          s.src = './fallback-app.js';
-          s.defer = true;
-          document.body.appendChild(s);
-        }
-      })();
-    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
   </body>
 </html>
+>>>>>>> 7ee568e0f2d05ca9c9fe44b6f07484981c4b97fb
+
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>F-fit</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+  </body>
+</html>
+>>>>>>> 7ee568e0f2d05ca9c9fe44b6f07484981c4b97fb
