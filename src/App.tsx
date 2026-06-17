@@ -34,10 +34,10 @@ export default function App() {
   const [isCompressing, setIsCompressing] = useState(false);
 
   // Image cropping states - removed for auto-crop
-  // const [showCropModal, setShowCropModal] = useState(false);
-  // const [crop, setCrop] = useState({ x: 0, y: 0 });
-  // const [zoom, setZoom] = useState(1);
-  // const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [croppedImage, setCroppedImage] = useState<string | null>(null);
 
   // Exercise Modal state
