@@ -140,7 +140,12 @@ async function startServer() {
   // Login
   app.post("/api/login", (req, res) => {
     const { email, password, type } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE email = ? AND password = ? AND type = ?").get(email, password, type);
+    let user;
+    if (type && type.trim() !== '') {
+      user = db.prepare("SELECT * FROM users WHERE email = ? AND password = ? AND type = ?").get(email, password, type);
+    } else {
+      user = db.prepare("SELECT * FROM users WHERE email = ? AND password = ?").get(email, password);
+    }
     if (user) {
       res.json({ success: true, user });
     } else {
