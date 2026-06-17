@@ -31,9 +31,23 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Checkout main branch
+        uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          publish_branch: gh-pages
+          ref: main
+          path: repo-main
+
+      - name: Copy build to `docs` folder
+        run: |
+          rm -rf repo-main/docs || true
+          mkdir -p repo-main/docs
+          cp -a dist/. repo-main/docs/
+
+      - name: Commit and push to `main`
+        run: |
+          cd repo-main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "ci: publish dist to docs [skip ci]" || echo "no changes to commit"
+          git push origin main
