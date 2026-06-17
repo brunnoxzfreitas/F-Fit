@@ -162,23 +162,32 @@ async function startServer() {
   app.post("/api/users", (req, res) => {
     const { name, email, password, type, age, objective, bio, requesterId } = req.body;
 
-    // Security Check: Admins can create admins; admins or instructors can create instructors
+    // Enforce role-creation rules:
+    // - only admins can create admins
+    // - only admins can create instrutors
+    // - admins or instrutors can create alunos
+    if (!type || type.trim() === '') {
+      return res.status(400).json({ error: 'Tipo de usuário é obrigatório.' });
+    }
+
     if (type === 'admin') {
-      if (!requesterId) {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores podem criar este tipo de usuário." });
-      }
-      const requester = db.prepare("SELECT type FROM users WHERE id = ?").get(requesterId) as { type: string } | undefined;
-      if (!requester || requester.type !== 'admin') {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores podem criar administradores." });
-      }
-    } else if (type === 'instrutor') {
-      if (!requesterId) {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores ou instrutores podem criar instrutores." });
-      }
-      const requester = db.prepare("SELECT type FROM users WHERE id = ?").get(requesterId) as { type: string } | undefined;
-      if (!requester || (requester.type !== 'admin' && requester.type !== 'instrutor')) {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores ou instrutores podem criar instrutores." });
-      }
+      if (!requesterId) return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar administradores.' });
+      const requester = db.prepare('SELECT type FROM users WHERE id = ?').get(requesterId) as { type: string } | undefined;
+      if (!requester || requester.type !== 'admin') return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar administradores.' });
+    }
+
+    if (type === 'instrutor') {
+      // only admins can create instrutors
+      if (!requesterId) return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar instrutores.' });
+      const requester = db.prepare('SELECT type FROM users WHERE id = ?').get(requesterId) as { type: string } | undefined;
+      if (!requester || requester.type !== 'admin') return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar instrutores.' });
+    }
+
+    if (type === 'aluno') {
+      // only admins or instrutors can create alunos
+      if (!requesterId) return res.status(403).json({ error: 'Acesso negado. Apenas instrutores ou administradores podem criar alunos.' });
+      const requester = db.prepare('SELECT type FROM users WHERE id = ?').get(requesterId) as { type: string } | undefined;
+      if (!requester || (requester.type !== 'admin' && requester.type !== 'instrutor')) return res.status(403).json({ error: 'Acesso negado. Apenas instrutores ou administradores podem criar alunos.' });
     }
 
     try {
