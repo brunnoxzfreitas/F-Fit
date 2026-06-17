@@ -719,7 +719,9 @@ export default function App() {
               </div>
               
               <button type="submit" className="btn-primary w-full py-4 rounded-xl font-bold text-lg uppercase tracking-wider">Entrar</button>
-              
+              <p className="text-center text-white/80 mt-4">
+                Não tem conta? <button type="button" onClick={() => setIsRegistering(true)} className="text-white font-bold underline">Cadastrar</button>
+              </p>
             </form>
           )}
         </div>
