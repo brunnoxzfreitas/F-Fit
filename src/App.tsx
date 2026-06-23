@@ -93,11 +93,11 @@ export default function App() {
 
   // Instructor Modal state
   const [showInstructorModal, setShowInstructorModal] = useState(false);
-  const [newInstructor, setNewInstructor] = useState({ name: '', email: '', password: '', bio: '' });
+  const [newInstructor, setNewInstructor] = useState({ name: '', email: '', password: '', bio: '', studentLimit: 20 });
 
   // Student Modal state
   const [showStudentModal, setShowStudentModal] = useState(false);
-  const [newStudent, setNewStudent] = useState({ name: '', email: '', password: '', objective: 'saude' });
+  const [newStudent, setNewStudent] = useState({ name: '', email: '', password: '', objective: 'saude', instructorId: '' });
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
   // Register state
@@ -369,6 +369,7 @@ export default function App() {
           password: newInstructor.password, 
           type: 'instrutor', 
           bio: newInstructor.bio,
+          studentLimit: newInstructor.studentLimit,
           requesterId: currentUser.id
         })
       });
@@ -376,7 +377,7 @@ export default function App() {
         const addedInstructor = await res.json();
         setUsers([...users, addedInstructor]);
         setShowInstructorModal(false);
-        setNewInstructor({ name: '', email: '', password: '', bio: '' });
+        setNewInstructor({ name: '', email: '', password: '', bio: '', studentLimit: 20 });
         alert('Instrutor cadastrado com sucesso!');
       } else {
         alert('Este email já está cadastrado!');
@@ -392,6 +393,10 @@ export default function App() {
       alert('A senha deve ter pelo menos 6 caracteres!');
       return;
     }
+    if (currentUser.type === 'admin' && !newStudent.instructorId) {
+      alert('Selecione o instrutor responsÃ¡vel pelo aluno.');
+      return;
+    }
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -402,6 +407,7 @@ export default function App() {
           password: newStudent.password, 
           type: 'aluno', 
           objective: newStudent.objective,
+          instructorId: currentUser.type === 'admin' ? Number(newStudent.instructorId) : currentUser.id,
           requesterId: currentUser.id
         })
       });
@@ -409,7 +415,7 @@ export default function App() {
         const addedStudent = await res.json();
         setUsers([...users, addedStudent]);
         setShowStudentModal(false);
-        setNewStudent({ name: '', email: '', password: '', objective: 'saude' });
+        setNewStudent({ name: '', email: '', password: '', objective: 'saude', instructorId: '' });
         alert('Aluno cadastrado com sucesso!');
       } else {
         const errorData = await res.json();
@@ -417,6 +423,25 @@ export default function App() {
       }
     } catch (error) {
       alert('Erro ao cadastrar aluno.');
+    }
+  };
+
+  const handleUpdateInstructorLimit = async (instructor: any, studentLimit: number) => {
+    try {
+      const res = await fetch(`/api/users/${instructor.id}/admin`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ studentLimit })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers(users.map(u => u.id === data.id ? data : u));
+        alert('Limite atualizado com sucesso!');
+      } else {
+        alert(data.error || 'Erro ao atualizar limite.');
+      }
+    } catch {
+      alert('Erro ao atualizar limite.');
     }
   };
 
@@ -772,6 +797,16 @@ export default function App() {
     const start = (instructorPage - 1) * ITEMS_PER_PAGE;
     return filtered.slice(start, start + ITEMS_PER_PAGE);
   }, [users, instructorSearch, instructorPage]);
+
+  const instructors = useMemo(() => users.filter(u => u.type === 'instrutor'), [users]);
+
+  const getInstructorStudentCount = (instructorId: number) => (
+    users.filter(u => u.type === 'aluno' && Number(u.instructorId) === Number(instructorId)).length
+  );
+
+  const getInstructorName = (instructorId?: number | string | null) => (
+    instructors.find(instructor => Number(instructor.id) === Number(instructorId))?.name || 'Sem instrutor'
+  );
 
   if (!currentUser) {
     return (
@@ -1908,6 +1943,9 @@ export default function App() {
                             <div>
                               <h5 className="font-bold text-lg text-white">{student.name}</h5>
                               <p className="text-white/70 text-sm">{student.email}</p>
+                              {currentUser.type === 'admin' && (
+                                <p className="text-white/70 text-sm mt-1"><strong className="text-white/90">Instrutor:</strong> {getInstructorName(student.instructorId)}</p>
+                              )}
                               <p className="text-white/70 text-sm mt-1"><strong className="text-white/90">Objetivo:</strong> <span className="capitalize">{student.objective || 'Não definido'}</span></p>
                             </div>
                           </div>
@@ -1986,21 +2024,44 @@ export default function App() {
                   {filteredInstructors.length === 0 ? (
                     <div className="col-span-full text-center py-10 text-white/40">Nenhum instrutor encontrado.</div>
                   ) : (
-                    filteredInstructors.map(instructor => (
-                      <div key={instructor.id} className="glass-panel p-5 rounded-xl flex justify-between items-center border border-white/10 hover:border-white/30 transition-colors">
-                        <div>
+                    filteredInstructors.map(instructor => {
+                      const studentCount = getInstructorStudentCount(instructor.id);
+                      const studentLimit = Number(instructor.studentLimit) || 20;
+                      return (
+                      <div key={instructor.id} className="glass-panel p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-white/10 hover:border-white/30 transition-colors">
+                        <div className="flex-1">
                           <h5 className="font-bold text-lg text-white">{instructor.name}</h5>
                           <p className="text-white/70 text-sm">{instructor.email}</p>
+                          <p className="text-white/70 text-sm mt-2">
+                            <strong className="text-white/90">Alunos:</strong> {studentCount}/{studentLimit}
+                          </p>
                           {instructor.bio && <p className="text-white/60 text-xs mt-2 line-clamp-2">{instructor.bio}</p>}
                         </div>
-                        <button onClick={async () => {
-                          if (confirm('Remover este instrutor?')) {
-                            await fetch(`/api/users/${instructor.id}`, { method: 'DELETE', headers: authHeaders });
-                            setUsers(users.filter(u => u.id !== instructor.id));
-                          }
-                        }} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors px-4 py-2 rounded-lg text-sm">Remover</button>
+                        <div className="w-full sm:w-48 flex flex-col gap-2">
+                          <label className="text-white/80 text-xs font-semibold">Limite de alunos</label>
+                          <input
+                            type="number"
+                            min={studentCount || 1}
+                            value={studentLimit}
+                            onChange={e => setUsers(users.map(u => u.id === instructor.id ? { ...u, studentLimit: Number(e.target.value) } : u))}
+                            className="glass-input w-full p-2 rounded-lg"
+                          />
+                          <button onClick={() => handleUpdateInstructorLimit(instructor, studentLimit)} className="btn-secondary px-4 py-2 rounded-lg text-sm">Salvar Limite</button>
+                          <button onClick={async () => {
+                            if (confirm('Remover este instrutor?')) {
+                              const res = await fetch(`/api/users/${instructor.id}`, { method: 'DELETE', headers: authHeaders });
+                              if (res.ok) {
+                                setUsers(users.filter(u => u.id !== instructor.id));
+                              } else {
+                                const data = await res.json();
+                                alert(data.error || 'Erro ao remover instrutor.');
+                              }
+                            }
+                          }} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors px-4 py-2 rounded-lg text-sm">Remover</button>
+                        </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 
@@ -2218,6 +2279,10 @@ export default function App() {
                 <input type="password" required value={newInstructor.password} onChange={e => setNewInstructor({...newInstructor, password: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Senha de acesso" />
               </div>
               <div>
+                <label className="block text-white font-semibold mb-1">Limite de alunos:</label>
+                <input type="number" min="1" required value={newInstructor.studentLimit} onChange={e => setNewInstructor({...newInstructor, studentLimit: Number(e.target.value)})} className="glass-input w-full p-3 rounded-xl" placeholder="Ex: 20" />
+              </div>
+              <div>
                 <label className="block text-white font-semibold mb-1">Biografia (Opcional):</label>
                 <textarea value={newInstructor.bio} onChange={e => setNewInstructor({...newInstructor, bio: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Breve descrição sobre o instrutor..." rows={3}></textarea>
               </div>
@@ -2247,6 +2312,23 @@ export default function App() {
                 <label className="block text-white font-semibold mb-1">Senha:</label>
                 <input type="password" required value={newStudent.password} onChange={e => setNewStudent({...newStudent, password: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Senha de acesso" />
               </div>
+              {currentUser.type === 'admin' && (
+                <div>
+                  <label className="block text-white font-semibold mb-1">Instrutor responsÃ¡vel:</label>
+                  <select required value={newStudent.instructorId} onChange={e => setNewStudent({...newStudent, instructorId: e.target.value})} className="glass-input w-full p-3 rounded-xl text-black">
+                    <option value="">Selecione um instrutor...</option>
+                    {instructors.map(instructor => {
+                      const studentCount = getInstructorStudentCount(instructor.id);
+                      const studentLimit = Number(instructor.studentLimit) || 20;
+                      return (
+                        <option key={instructor.id} value={instructor.id} disabled={studentCount >= studentLimit}>
+                          {instructor.name} ({studentCount}/{studentLimit})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-white font-semibold mb-1">Objetivo:</label>
                 <select required value={newStudent.objective} onChange={e => setNewStudent({...newStudent, objective: e.target.value})} className="glass-input w-full p-3 rounded-xl text-black">

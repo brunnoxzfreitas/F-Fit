@@ -55,7 +55,10 @@ db.exec(`
     objective TEXT,
     role TEXT,
     permissions TEXT,
-    bio TEXT
+    bio TEXT,
+    photo TEXT,
+    instructorId INTEGER,
+    studentLimit INTEGER DEFAULT 20
   );
 
   CREATE TABLE IF NOT EXISTS exercises (
@@ -123,6 +126,18 @@ try {
 }
 
 try {
+  db.exec("ALTER TABLE users ADD COLUMN instructorId INTEGER");
+} catch (e) {
+  // Column might already exist
+}
+
+try {
+  db.exec("ALTER TABLE users ADD COLUMN studentLimit INTEGER DEFAULT 20");
+} catch (e) {
+  // Column might already exist
+}
+
+try {
   db.exec("ALTER TABLE workout_logs ADD COLUMN sets INTEGER DEFAULT 1");
 } catch (e) {
   // Column might already exist
@@ -141,6 +156,7 @@ try {
     CREATE INDEX IF NOT EXISTS idx_workout_logs_date ON workout_logs(date);
     CREATE INDEX IF NOT EXISTS idx_workout_plans_student ON workout_plans(studentId);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_instructor ON users(instructorId);
   `);
 } catch (e) {
   // ignore
@@ -158,6 +174,12 @@ if (userCount.count === 0) {
   insertExercise.run("Supino Reto", "peito", "Exercício para desenvolvimento do peitoral superior", "https://www.youtube.com/embed/0G2_XV7slIg", "url");
   insertExercise.run("Agachamento", "pernas", "Exercício fundamental para quadríceps e glúteos", "https://www.youtube.com/embed/0tn5K9NlCfo", "url");
   insertExercise.run("Remada Curvada", "costas", "Exercício para fortalecimento dos dorsais", "https://www.youtube.com/embed/G8l_8chR5BE", "url");
+}
+
+const firstInstructor = db.prepare("SELECT id FROM users WHERE type = 'instrutor' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+if (firstInstructor) {
+  db.prepare("UPDATE users SET studentLimit = COALESCE(studentLimit, 20) WHERE type = 'instrutor'").run();
+  db.prepare("UPDATE users SET instructorId = ? WHERE type = 'aluno' AND instructorId IS NULL").run(firstInstructor.id);
 }
 
 async function startServer() {
@@ -227,8 +249,8 @@ async function startServer() {
     try {
       const requester = (req as any).user as { id: number, type: string };
       const users = requester.type === 'admin'
-        ? db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions FROM users").all()
-        : db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions FROM users WHERE type = 'aluno'").all();
+        ? db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users").all()
+        : db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE type = 'aluno' AND instructorId = ?").all(requester.id);
       res.json(users);
     } catch (e) {
       res.status(500).json({ error: 'Erro ao buscar usuários' });
@@ -237,6 +259,8 @@ async function startServer() {
 
   app.post("/api/users", authenticate, (req, res) => {
     const { name, email, password, type, age, objective, bio } = req.body;
+    const studentLimit = Number(req.body.studentLimit) || 20;
+    const requestedInstructorId = req.body.instructorId ? Number(req.body.instructorId) : null;
     const creator = (req as any).user as { id: number, type: string } | undefined;
 
     if (!type || type.trim() === '') return res.status(400).json({ error: 'Tipo de usuário é obrigatório.' });
@@ -249,9 +273,22 @@ async function startServer() {
 
     try {
       const hashed = bcrypt.hashSync(password, 10);
-      const stmt = db.prepare("INSERT INTO users (name, email, password, type, age, objective, bio) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const info = stmt.run(name, email, hashed, type, age, objective, bio);
-      const newUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions FROM users WHERE id = ?").get(info.lastInsertRowid);
+      let info;
+      if (type === 'aluno') {
+        const instructorId = creator?.type === 'instrutor' ? creator.id : requestedInstructorId;
+        if (!instructorId) return res.status(400).json({ error: 'Selecione um instrutor responsÃ¡vel pelo aluno.' });
+        const instructor = db.prepare("SELECT id, studentLimit FROM users WHERE id = ? AND type = 'instrutor'").get(instructorId) as { id: number, studentLimit: number | null } | undefined;
+        if (!instructor) return res.status(400).json({ error: 'Instrutor invÃ¡lido.' });
+        const currentStudents = db.prepare("SELECT COUNT(*) as count FROM users WHERE type = 'aluno' AND instructorId = ?").get(instructorId) as { count: number };
+        const limit = instructor.studentLimit ?? 20;
+        if (currentStudents.count >= limit) return res.status(400).json({ error: `Este instrutor jÃ¡ atingiu o limite de ${limit} alunos.` });
+        const stmt = db.prepare("INSERT INTO users (name, email, password, type, age, objective, bio, instructorId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        info = stmt.run(name, email, hashed, type, age, objective, bio, instructorId);
+      } else {
+        const stmt = db.prepare("INSERT INTO users (name, email, password, type, age, objective, bio, studentLimit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        info = stmt.run(name, email, hashed, type, age, objective, bio, Math.max(1, studentLimit));
+      }
+      const newUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE id = ?").get(info.lastInsertRowid);
       res.json(newUser);
     } catch (error: any) {
       res.status(400).json({ error: "Email já cadastrado" });
@@ -296,7 +333,7 @@ async function startServer() {
       
       stmt.run(...params);
       
-      const updatedUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions FROM users WHERE id = ?").get(userId);
+      const updatedUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE id = ?").get(userId);
       res.json(updatedUser);
     } catch (error: any) {
       if (error.message && error.message.includes('UNIQUE constraint failed')) {
@@ -307,6 +344,40 @@ async function startServer() {
     }
   });
 
+  app.patch("/api/users/:id/admin", authenticate, requireRole(['admin']), (req, res) => {
+    const userId = Number(req.params.id);
+    const { studentLimit, instructorId } = req.body;
+
+    try {
+      const target = db.prepare("SELECT id,type,instructorId FROM users WHERE id = ?").get(userId) as { id: number, type: string, instructorId: number | null } | undefined;
+      if (!target) return res.status(404).json({ error: 'UsuÃ¡rio nÃ£o encontrado' });
+
+      if (target.type === 'instrutor') {
+        const limit = Math.max(1, Number(studentLimit) || 1);
+        const currentStudents = db.prepare("SELECT COUNT(*) as count FROM users WHERE type = 'aluno' AND instructorId = ?").get(userId) as { count: number };
+        if (limit < currentStudents.count) {
+          return res.status(400).json({ error: `Este instrutor jÃ¡ tem ${currentStudents.count} alunos. O limite nÃ£o pode ser menor que isso.` });
+        }
+        db.prepare("UPDATE users SET studentLimit = ? WHERE id = ?").run(limit, userId);
+      }
+
+      if (target.type === 'aluno' && instructorId !== undefined) {
+        const nextInstructorId = Number(instructorId);
+        const instructor = db.prepare("SELECT id, studentLimit FROM users WHERE id = ? AND type = 'instrutor'").get(nextInstructorId) as { id: number, studentLimit: number | null } | undefined;
+        if (!instructor) return res.status(400).json({ error: 'Instrutor invÃ¡lido.' });
+        const currentStudents = db.prepare("SELECT COUNT(*) as count FROM users WHERE type = 'aluno' AND instructorId = ? AND id != ?").get(nextInstructorId, userId) as { count: number };
+        const limit = instructor.studentLimit ?? 20;
+        if (currentStudents.count >= limit) return res.status(400).json({ error: `Este instrutor jÃ¡ atingiu o limite de ${limit} alunos.` });
+        db.prepare("UPDATE users SET instructorId = ? WHERE id = ?").run(nextInstructorId, userId);
+      }
+
+      const updatedUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE id = ?").get(userId);
+      res.json(updatedUser);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao atualizar limite.' });
+    }
+  });
+
   app.put("/api/users/:id/photo", authenticate, upload.single('photo'), (req, res) => {
     const userId = req.params.id;
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
@@ -314,7 +385,7 @@ async function startServer() {
     try {
       const stmt = db.prepare("UPDATE users SET photo = ? WHERE id = ?");
       stmt.run(photoPath, userId);
-      const updatedUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions FROM users WHERE id = ?").get(userId);
+      const updatedUser = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE id = ?").get(userId);
       res.json(updatedUser);
     } catch (e) {
       res.status(500).json({ error: 'Erro ao atualizar foto' });
@@ -325,10 +396,16 @@ async function startServer() {
     const userId = req.params.id;
     try {
       const requester = (req as any).user as { id: number, type: string };
-      const target = db.prepare("SELECT id,type FROM users WHERE id = ?").get(userId) as { id: number, type: string } | undefined;
+      const target = db.prepare("SELECT id,type,instructorId FROM users WHERE id = ?").get(userId) as { id: number, type: string, instructorId: number | null } | undefined;
       if (!target) return res.status(404).json({ error: 'UsuÃ¡rio nÃ£o encontrado' });
-      if (requester.type !== 'admin' && !(requester.type === 'instrutor' && target.type === 'aluno')) {
+      if (requester.type !== 'admin' && !(requester.type === 'instrutor' && target.type === 'aluno' && target.instructorId === requester.id)) {
         return res.status(403).json({ error: 'Acesso negado' });
+      }
+      if (target.type === 'instrutor') {
+        const assignedStudents = db.prepare("SELECT COUNT(*) as count FROM users WHERE type = 'aluno' AND instructorId = ?").get(userId) as { count: number };
+        if (assignedStudents.count > 0) {
+          return res.status(400).json({ error: 'Este instrutor ainda possui alunos vinculados.' });
+        }
       }
       db.transaction(() => {
         db.prepare("DELETE FROM workout_plans WHERE studentId = ?").run(userId);
