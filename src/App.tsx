@@ -110,6 +110,7 @@ export default function App() {
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [newStudent, setNewStudent] = useState({ name: '', email: '', password: '', objective: 'saude', instructorId: '' });
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [selectedProgressStudentId, setSelectedProgressStudentId] = useState('');
 
   // Register state
   const [isRegistering, setIsRegistering] = useState(false);
@@ -826,6 +827,19 @@ export default function App() {
   const getInstructorName = (instructorId?: number | string | null) => (
     instructors.find(instructor => Number(instructor.id) === Number(instructorId))?.name || 'Sem instrutor'
   );
+
+  const progressStudents = useMemo(() => users.filter(u => u.type === 'aluno'), [users]);
+  const selectedProgressUser = currentUser?.type === 'aluno'
+    ? currentUser
+    : progressStudents.find(student => student.id.toString() === selectedProgressStudentId) || progressStudents[0];
+  const selectedProgressUserId = selectedProgressUser?.id;
+  const progressCompletedWorkouts = useMemo(() => (
+    selectedProgressUserId ? completedWorkouts.filter(w => w.userId === selectedProgressUserId) : []
+  ), [completedWorkouts, selectedProgressUserId]);
+  const progressWorkoutLogs = useMemo(() => (
+    selectedProgressUserId ? workoutLogs.filter(log => log.userId === selectedProgressUserId) : []
+  ), [workoutLogs, selectedProgressUserId]);
+  const progressGoalPercent = Math.min(Math.round((progressCompletedWorkouts.length / 5) * 100), 100);
 
   if (!currentUser) {
     return (
@@ -1680,23 +1694,92 @@ export default function App() {
 
         {activeTab === 'progress' && (
           <div className="glass-card p-5 sm:p-8 rounded-2xl">
-            <h3 className="text-xl sm:text-2xl font-bold text-white mb-6 flex items-center gap-2"><BarChart2 /> Meu Progresso</h3>
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-6 flex items-center gap-2">
+              <BarChart2 /> {currentUser.type === 'aluno' ? 'Meu Progresso' : 'Progresso dos Alunos'}
+            </h3>
+            {currentUser.type !== 'aluno' && (
+              <div className="glass-panel p-4 rounded-xl mb-6">
+                <label className="block text-white/80 text-sm font-semibold mb-2">Aluno para acompanhar:</label>
+                {progressStudents.length === 0 ? (
+                  <p className="text-white/60 text-sm">Nenhum aluno vinculado ainda.</p>
+                ) : (
+                  <select
+                    value={selectedProgressUser?.id?.toString() || ''}
+                    onChange={e => setSelectedProgressStudentId(e.target.value)}
+                    className="glass-input w-full p-3 rounded-xl text-white bg-transparent"
+                  >
+                    {progressStudents.map(student => (
+                      <option key={student.id} value={student.id} className="text-black">
+                        {student.name} - {student.email}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+            {currentUser.type !== 'aluno' && progressStudents.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-6">
+                {progressStudents.map(student => {
+                  const studentCompleted = completedWorkouts.filter(w => w.userId === student.id).length;
+                  const studentLogs = workoutLogs.filter(log => log.userId === student.id).length;
+                  const studentPercent = Math.min(Math.round((studentCompleted / 5) * 100), 100);
+                  const isSelected = selectedProgressUser?.id === student.id;
+
+                  return (
+                    <button
+                      key={student.id}
+                      type="button"
+                      onClick={() => setSelectedProgressStudentId(student.id.toString())}
+                      className={`glass-panel p-4 rounded-xl text-left transition-all border ${isSelected ? 'theme-selected-card' : 'border-white/10 hover:border-white/30'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div>
+                          <h4 className="text-white font-bold">{student.name}</h4>
+                          <p className="text-white/55 text-xs">{student.email}</p>
+                        </div>
+                        <div className="theme-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold border border-white/20 overflow-hidden flex-shrink-0">
+                          {student.photo && student.photo.trim() !== '' ? (
+                            <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
+                          ) : (
+                            student.name.charAt(0).toUpperCase()
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <div className="text-white font-black">{studentCompleted}</div>
+                          <div className="text-white/50 text-[10px] uppercase">Treinos</div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <div className="text-white font-black">{studentPercent}%</div>
+                          <div className="text-white/50 text-[10px] uppercase">Meta</div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <div className="text-white font-black">{studentLogs}</div>
+                          <div className="text-white/50 text-[10px] uppercase">Logs</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="glass-panel p-6 sm:p-8 rounded-xl text-center">
                 <div className="text-5xl font-black text-gradient mb-4">
-                  {completedWorkouts.filter(w => w.userId === currentUser.id).length}
+                  {progressCompletedWorkouts.length}
                 </div>
                 <div className="text-white/80 text-lg font-medium">Total de Treinos Concluídos</div>
               </div>
               <div className="glass-panel p-8 rounded-xl text-center">
                 <div className="text-5xl font-black text-gradient mb-4">
-                  {Math.min(Math.round((completedWorkouts.filter(w => w.userId === currentUser.id).length / 5) * 100), 100)}%
+                  {progressGoalPercent}%
                 </div>
                 <div className="text-white/80 text-lg font-medium">Meta Semanal Atingida</div>
                 <div className="w-full bg-white/10 h-3 rounded-full mt-4 overflow-hidden">
                   <div 
                     className="theme-progress-fill h-full" 
-                    style={{ width: `${Math.min(Math.round((completedWorkouts.filter(w => w.userId === currentUser.id).length / 5) * 100), 100)}%` }}
+                    style={{ width: `${progressGoalPercent}%` }}
                   ></div>
                 </div>
               </div>
@@ -1705,11 +1788,11 @@ export default function App() {
             <div className="mt-8">
               <h4 className="text-xl font-bold text-white mb-4">Treinos Concluídos</h4>
               <div className="glass-panel p-4 sm:p-6 rounded-xl max-h-64 overflow-y-auto">
-                {completedWorkouts.filter(w => w.userId === currentUser.id).length === 0 ? (
+                {progressCompletedWorkouts.length === 0 ? (
                   <p className="text-white/60 text-center py-4">Nenhum treino concluído ainda.</p>
                 ) : (
                   <div className="space-y-3">
-                    {completedWorkouts.filter(w => w.userId === currentUser.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(w => (
+                    {progressCompletedWorkouts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(w => (
                       <div key={w.id} className="bg-white/5 p-4 rounded-lg border border-white/10 flex justify-between items-center">
                         <div>
                           <h5 className="font-bold text-white">{['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][w.dayIndex]}</h5>
@@ -1737,11 +1820,11 @@ export default function App() {
             <div className="mt-8">
               <h4 className="text-xl font-bold text-white mb-4">Histórico de Exercícios</h4>
               <div className="glass-panel p-4 sm:p-6 rounded-xl max-h-96 overflow-y-auto">
-                {workoutLogs.filter(log => log.userId === currentUser.id).length === 0 ? (
+                {progressWorkoutLogs.length === 0 ? (
                   <p className="text-white/60 text-center py-4">Nenhum exercício registrado ainda.</p>
                 ) : (
                   <div className="space-y-3">
-                    {workoutLogs.filter(log => log.userId === currentUser.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(log => (
+                    {progressWorkoutLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(log => (
                       <div key={log.id} className="bg-white/5 p-4 rounded-lg border border-white/10 flex justify-between items-center">
                         <div>
                           <h5 className="font-bold text-white">{log.exerciseName}</h5>
