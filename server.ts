@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
