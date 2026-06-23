@@ -35,6 +35,17 @@ const PRESET_LABELS: Record<string, string> = {
   rose: 'Rosa'
 };
 
+const MUSCLE_GROUPS = [
+  { value: 'peito', label: 'Peito' },
+  { value: 'costas', label: 'Costas' },
+  { value: 'pernas', label: 'Pernas' },
+  { value: 'ombros', label: 'Ombros' },
+  { value: 'biceps', label: 'Biceps' },
+  { value: 'triceps', label: 'Triceps' },
+  { value: 'abdomen', label: 'Abdomen' },
+  { value: 'cardio', label: 'Cardio' }
+];
+
 const hexToRgb = (hex: string) => {
   const cleanHex = hex.replace('#', '');
   const value = parseInt(cleanHex.length === 3 ? cleanHex.split('').map(char => char + char).join('') : cleanHex, 16);
@@ -274,6 +285,10 @@ export default function App() {
 
   const handleAddExercise = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newExercise.muscleGroup) {
+      alert('Selecione o grupo muscular.');
+      return;
+    }
     try {
       const formData = new FormData();
       formData.append('name', newExercise.name);
@@ -314,6 +329,10 @@ export default function App() {
   const handleUpdateExercise = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingExercise) return;
+    if (!editingExercise.muscleGroup) {
+      alert('Selecione o grupo muscular.');
+      return;
+    }
     
     try {
       const formData = new FormData();
@@ -2159,7 +2178,26 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Grupo Muscular:</label>
-                <select required value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})} className="glass-input w-full p-3 rounded-xl">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                  {MUSCLE_GROUPS.map(group => {
+                    const isSelected = newExercise.muscleGroup === group.value;
+                    return (
+                      <button
+                        key={group.value}
+                        type="button"
+                        onClick={() => setNewExercise({...newExercise, muscleGroup: group.value})}
+                        className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-all ${
+                          isSelected
+                            ? 'border-white/70 bg-white/20 text-white shadow-lg scale-[1.02]'
+                            : 'border-white/10 bg-white/5 text-white/75 hover:border-white/35 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {group.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <select value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})} className="hidden">
                   <option value="" className="text-black">Selecione...</option>
                   <option value="peito" className="text-black">Peito</option>
                   <option value="costas" className="text-black">Costas</option>
@@ -2213,7 +2251,26 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Grupo Muscular:</label>
-                <select required value={editingExercise.muscleGroup} onChange={e => setEditingExercise({...editingExercise, muscleGroup: e.target.value})} className="glass-input w-full p-3 rounded-xl">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                  {MUSCLE_GROUPS.map(group => {
+                    const isSelected = editingExercise.muscleGroup === group.value;
+                    return (
+                      <button
+                        key={group.value}
+                        type="button"
+                        onClick={() => setEditingExercise({...editingExercise, muscleGroup: group.value})}
+                        className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-all ${
+                          isSelected
+                            ? 'border-white/70 bg-white/20 text-white shadow-lg scale-[1.02]'
+                            : 'border-white/10 bg-white/5 text-white/75 hover:border-white/35 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {group.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <select value={editingExercise.muscleGroup} onChange={e => setEditingExercise({...editingExercise, muscleGroup: e.target.value})} className="hidden">
                   <option value="" className="text-black">Selecione...</option>
                   <option value="peito" className="text-black">Peito</option>
                   <option value="costas" className="text-black">Costas</option>
