@@ -5,6 +5,46 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 import Cropper from 'react-easy-crop';
 
+type UserTheme = {
+  preset: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+};
+
+const DEFAULT_THEME: UserTheme = {
+  preset: 'ffit',
+  primary: '#22c55e',
+  secondary: '#14b8a6',
+  accent: '#f59e0b'
+};
+
+const THEME_PRESETS: UserTheme[] = [
+  DEFAULT_THEME,
+  { preset: 'ocean', primary: '#0ea5e9', secondary: '#14b8a6', accent: '#facc15' },
+  { preset: 'energy', primary: '#f97316', secondary: '#ef4444', accent: '#facc15' },
+  { preset: 'focus', primary: '#8b5cf6', secondary: '#06b6d4', accent: '#f59e0b' },
+  { preset: 'rose', primary: '#ec4899', secondary: '#a855f7', accent: '#fb7185' }
+];
+
+const PRESET_LABELS: Record<string, string> = {
+  ffit: 'F-fit',
+  ocean: 'Oceano',
+  energy: 'Energia',
+  focus: 'Foco',
+  rose: 'Rosa'
+};
+
+const hexToRgb = (hex: string) => {
+  const cleanHex = hex.replace('#', '');
+  const value = parseInt(cleanHex.length === 3 ? cleanHex.split('').map(char => char + char).join('') : cleanHex, 16);
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255
+  };
+};
+
 export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [exercises, setExercises] = useState<any[]>([]);
@@ -17,6 +57,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('profile');
   const [adminTab, setAdminTab] = useState('exercises');
   const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', true);
+  const [userThemes, setUserThemes] = useLocalStorage<Record<string, UserTheme>>('userColorThemes', {});
+  const [lastColorTheme, setLastColorTheme] = useLocalStorage<UserTheme>('lastColorTheme', DEFAULT_THEME);
+  const [authToken, setAuthToken] = useLocalStorage<string | null>('authToken', null);
   
   const [showUserTypeModal, setShowUserTypeModal] = useState(false);
   const [selectedUserType, setSelectedUserType] = useState('');
@@ -81,15 +124,72 @@ export default function App() {
   const [instructorSearch, setInstructorSearch] = useState('');
   const [instructorPage, setInstructorPage] = useState(1);
   const ITEMS_PER_PAGE = 6;
+  const currentTheme = useMemo(() => {
+    if (!currentUser) return lastColorTheme || DEFAULT_THEME;
+    return userThemes[String(currentUser.id)] || lastColorTheme || DEFAULT_THEME;
+  }, [currentUser, lastColorTheme, userThemes]);
+
+  const saveCurrentTheme = (theme: UserTheme) => {
+    setLastColorTheme(theme);
+    if (currentUser) {
+      setUserThemes(prev => ({
+        ...prev,
+        [String(currentUser.id)]: theme
+      }));
+    }
+  };
+
+  const updateThemeColor = (field: 'primary' | 'secondary' | 'accent', value: string) => {
+    saveCurrentTheme({
+      ...currentTheme,
+      preset: 'custom',
+      [field]: value
+    });
+  };
+
+  const applyThemePreset = (theme: UserTheme) => {
+    saveCurrentTheme(theme);
+  };
+
+  const authHeaders = useMemo(() => (
+    authToken ? { Authorization: `Bearer ${authToken}` } : {}
+  ), [authToken]);
 
   useEffect(() => {
+    const loadArray = async (url: string, setter: React.Dispatch<React.SetStateAction<any[]>>, token?: string | null) => {
+      try {
+        const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+        const data = await res.json();
+        setter(Array.isArray(data) ? data : []);
+      } catch {
+        setter([]);
+      }
+    };
+
     // Fetch initial data from our new backend
-    fetch('/api/users').then(res => res.json()).then(setUsers);
-    fetch('/api/exercises').then(res => res.json()).then(setExercises);
-    fetch('/api/completed-workouts').then(res => res.json()).then(setCompletedWorkouts);
-    fetch('/api/workout-logs').then(res => res.json()).then(setWorkoutLogs);
-    fetch('/api/workout-plans').then(res => res.json()).then(setWorkoutPlans);
+    loadArray('/api/exercises', setExercises);
+    loadArray('/api/completed-workouts', setCompletedWorkouts);
+    loadArray('/api/workout-plans', setWorkoutPlans);
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || !authToken) return;
+
+    const loadArray = async (url: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${authToken}` } });
+        const data = await res.json();
+        setter(Array.isArray(data) ? data : []);
+      } catch {
+        setter([]);
+      }
+    };
+
+    if (currentUser.type === 'admin' || currentUser.type === 'instrutor') {
+      loadArray('/api/users', setUsers);
+    }
+    loadArray('/api/workout-logs', setWorkoutLogs);
+  }, [currentUser, authToken]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -98,6 +198,22 @@ export default function App() {
       document.body.classList.remove('dark-mode');
     }
   }, [isDarkMode]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const primaryRgb = hexToRgb(currentTheme.primary);
+    const secondaryRgb = hexToRgb(currentTheme.secondary);
+    const accentRgb = hexToRgb(currentTheme.accent);
+
+    root.style.setProperty('--primary-color', currentTheme.primary);
+    root.style.setProperty('--secondary-color', currentTheme.secondary);
+    root.style.setProperty('--accent-color', currentTheme.accent);
+    root.style.setProperty('--primary-rgb', `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`);
+    root.style.setProperty('--secondary-rgb', `${secondaryRgb.r}, ${secondaryRgb.g}, ${secondaryRgb.b}`);
+    root.style.setProperty('--accent-rgb', `${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}`);
+    root.style.setProperty('--primary-gradient', `linear-gradient(135deg, ${currentTheme.primary} 0%, ${currentTheme.secondary} 58%, ${currentTheme.accent} 100%)`);
+    root.style.setProperty('--neon-shadow', `0 0 28px rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.22)`);
+  }, [currentTheme]);
 
   useEffect(() => {
     if (currentUser) {
@@ -122,6 +238,7 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setCurrentUser(data.user);
+        setAuthToken(data.token);
       } else {
         alert(data.message || 'Credenciais inválidas!');
       }
@@ -139,7 +256,7 @@ export default function App() {
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ name: regName, email: regEmail, password: regPassword, type: 'aluno', objective: 'saude' })
       });
       if (res.ok) {
@@ -178,6 +295,7 @@ export default function App() {
 
       const res = await fetch('/api/exercises', {
         method: 'POST',
+        headers: authHeaders,
         body: formData
       });
       if (res.ok) {
@@ -220,6 +338,7 @@ export default function App() {
 
       const res = await fetch(`/api/exercises/${editingExercise.id}`, {
         method: 'PUT',
+        headers: authHeaders,
         body: formData
       });
       if (res.ok) {
@@ -243,7 +362,7 @@ export default function App() {
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ 
           name: newInstructor.name, 
           email: newInstructor.email, 
@@ -276,7 +395,7 @@ export default function App() {
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ 
           name: newStudent.name, 
           email: newStudent.email, 
@@ -303,6 +422,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setAuthToken(null);
     setEmail('');
     setPassword('');
     setSelectedUserType('');
@@ -553,6 +673,7 @@ export default function App() {
 
       const res = await fetch(`/api/users/${currentUser.id}`, {
         method: 'PUT',
+        headers: authHeaders,
         body: formData
       });
       
@@ -759,7 +880,7 @@ export default function App() {
     <div className="container mx-auto px-4 py-6 sm:py-8 relative z-10 max-w-6xl">
       <div className="glass-card p-5 sm:p-6 rounded-2xl mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-center sm:text-left">
         <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xl sm:text-2xl font-bold border-2 border-white/20 overflow-hidden">
+          <div className="theme-avatar w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-white text-xl sm:text-2xl font-bold border-2 border-white/20 overflow-hidden">
             {currentUser.photo ? (
               <img src={currentUser.photo} alt={currentUser.name} className="w-full h-full object-cover" />
             ) : (
@@ -805,7 +926,7 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold border-2 border-white/20 overflow-hidden">
+                  <div className="theme-avatar w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold border-2 border-white/20 overflow-hidden">
                     {currentUser.photo ? (
                       <img src={currentUser.photo} alt={currentUser.name} className="w-full h-full object-cover" />
                     ) : (
@@ -845,13 +966,13 @@ export default function App() {
                     <YAxis allowDecimals={false} stroke="rgba(255,255,255,0.5)" tick={{ fill: 'rgba(255,255,255,0.8)' }} axisLine={false} tickLine={false} />
                     <Tooltip 
                       contentStyle={{ backgroundColor: 'rgba(20,20,20,0.8)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', color: '#fff' }}
-                      itemStyle={{ color: '#f093fb' }}
+                      itemStyle={{ color: currentTheme.primary }}
                     />
                     <Bar dataKey="treinos" fill="url(#colorGradient)" radius={[6, 6, 0, 0]} />
                     <defs>
                       <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f093fb" stopOpacity={1}/>
-                        <stop offset="100%" stopColor="#667eea" stopOpacity={1}/>
+                        <stop offset="0%" stopColor={currentTheme.primary} stopOpacity={1}/>
+                        <stop offset="100%" stopColor={currentTheme.secondary} stopOpacity={1}/>
                       </linearGradient>
                     </defs>
                   </BarChart>
@@ -902,7 +1023,7 @@ export default function App() {
                     <div 
                       className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 ${
                         isDragging 
-                          ? 'border-indigo-400 bg-indigo-500/10' 
+                          ? 'theme-selected-card' 
                           : 'border-white/30 hover:border-white/50'
                       } ${previewImage ? 'bg-white/5' : 'bg-white/5'}`}
                       onDragOver={handleDragOver}
@@ -992,7 +1113,7 @@ export default function App() {
                           <div className="text-white text-center w-full max-w-xs">
                             <div className="w-full bg-white/20 rounded-full h-2 mb-2">
                               <div 
-                                className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                                className="theme-progress-fill h-2 rounded-full transition-all duration-300"
                                 style={{ width: `${uploadProgress}%` }}
                               ></div>
                             </div>
@@ -1024,11 +1145,67 @@ export default function App() {
                 </form>
               </div>
 
-              <div className="glass-panel p-6 rounded-2xl h-fit">
+              <div className="space-y-6">
+                <div className="glass-panel p-6 rounded-2xl">
+                  <h4 className="text-lg font-bold text-white mb-2">Personalizar Cores</h4>
+                  <p className="text-white/70 text-sm mb-5">Escolha um estilo ou ajuste as cores mantendo o visual F-fit.</p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                    {THEME_PRESETS.map(theme => (
+                      <button
+                        key={theme.preset}
+                        type="button"
+                        onClick={() => applyThemePreset(theme)}
+                        className={`theme-preset ${currentTheme.preset === theme.preset ? 'active' : ''}`}
+                      >
+                        <span className="theme-preset-preview" style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary}, ${theme.accent})` }}></span>
+                        <span>{PRESET_LABELS[theme.preset]}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-4">
+                    {[
+                      { key: 'primary', label: 'Cor principal' },
+                      { key: 'secondary', label: 'Cor secundaria' },
+                      { key: 'accent', label: 'Destaque' }
+                    ].map(item => (
+                      <label key={item.key} className="theme-color-row">
+                        <span>{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="color"
+                            value={currentTheme[item.key as 'primary' | 'secondary' | 'accent']}
+                            onChange={e => updateThemeColor(item.key as 'primary' | 'secondary' | 'accent', e.target.value)}
+                            className="theme-color-input"
+                          />
+                          <input
+                            type="text"
+                            value={currentTheme[item.key as 'primary' | 'secondary' | 'accent']}
+                            className="glass-input w-28 px-3 py-2 rounded-lg uppercase text-sm"
+                            maxLength={7}
+                            readOnly
+                          />
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="theme-preview mt-6">
+                    <div>
+                      <p className="text-white font-bold">Preview do tema</p>
+                      <p className="text-white/70 text-sm">Botoes, abas e destaques usam essas cores.</p>
+                    </div>
+                    <button type="button" className="btn-primary px-4 py-2 rounded-xl font-bold">Exemplo</button>
+                  </div>
+                </div>
+
+                <div className="glass-panel p-6 rounded-2xl h-fit">
                 <h4 className="text-lg font-bold text-red-400 mb-4">Sessão</h4>
                 <button onClick={handleLogout} className="w-full py-3 rounded-xl font-bold text-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                   <LogOut size={20} /> Sair da Conta
                 </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1092,7 +1269,7 @@ export default function App() {
                     </button>
                     <button
                       onClick={handleApplyCrop}
-                      className="flex-1 py-3 px-4 rounded-xl font-medium bg-indigo-500 text-white hover:bg-indigo-600 transition-all flex items-center justify-center gap-2"
+                      className="theme-solid-button flex-1 py-3 px-4 rounded-xl font-medium text-white transition-all flex items-center justify-center gap-2"
                     >
                       <Check size={18} /> Aplicar Corte
                     </button>
@@ -1136,12 +1313,12 @@ export default function App() {
                       onClick={() => setSelectedStudentForPlan(student.id.toString())}
                       className={`glass-panel p-3 rounded-xl cursor-pointer border transition-all hover:border-white/40 ${
                         selectedStudentForPlan === student.id.toString() 
-                          ? 'border-blue-400 bg-blue-500/10 shadow-[0_0_10px_rgba(59,130,246,0.3)]' 
+                          ? 'theme-selected-card' 
                           : 'border-white/10 hover:border-white/30'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold border border-white/20 overflow-hidden flex-shrink-0">
+                        <div className="theme-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold border border-white/20 overflow-hidden flex-shrink-0">
                           {student.photo && student.photo.trim() !== '' ? (
                             <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
                           ) : (
@@ -1167,7 +1344,7 @@ export default function App() {
                       onClick={async () => {
                         if(confirm('Excluir TODO o plano semanal deste aluno?')) {
                           const targetStudentId = parseInt(selectedStudentForPlan);
-                          await fetch(`/api/workout-plans/student/${targetStudentId}`, { method: 'DELETE' });
+                          await fetch(`/api/workout-plans/student/${targetStudentId}`, { method: 'DELETE', headers: authHeaders });
                           setWorkoutPlans(workoutPlans.filter(p => p.studentId !== targetStudentId));
                           alert('Plano excluído com sucesso!');
                         }
@@ -1189,7 +1366,7 @@ export default function App() {
                   );
                   
                   return (
-                    <div key={day} className="glass-panel p-5 sm:p-6 rounded-xl border-l-4 border-l-indigo-500 flex flex-col">
+                    <div key={day} className="theme-day-card glass-panel p-5 sm:p-6 rounded-xl border-l-4 flex flex-col">
                       <div className="flex justify-between items-center mb-4">
                         <h4 className="text-lg sm:text-xl font-bold text-white">{day}</h4>
                         {currentUser.type !== 'aluno' && (
@@ -1202,7 +1379,7 @@ export default function App() {
                                     // Delete one by one for now as we don't have a bulk day delete endpoint
                                     // but we update state once at the end
                                     await Promise.all(dayExercises.map(ex => 
-                                      fetch(`/api/workout-plans/${ex.id}`, { method: 'DELETE' })
+                                      fetch(`/api/workout-plans/${ex.id}`, { method: 'DELETE', headers: authHeaders })
                                     ));
                                     setWorkoutPlans(workoutPlans.filter(p => !(p.studentId === targetStudentId && p.dayIndex === idx)));
                                   }
@@ -1243,7 +1420,7 @@ export default function App() {
                                         console.log(`Attempting to delete workout plan: ${ex.id}`);
                                         if(confirm('Remover este exercício do plano semanal?')) {
                                           try {
-                                            const res = await fetch(`/api/workout-plans/${ex.id}`, { method: 'DELETE' });
+                                            const res = await fetch(`/api/workout-plans/${ex.id}`, { method: 'DELETE', headers: authHeaders });
                                             console.log(`Delete response status: ${res.status}`);
                                             if (res.ok) {
                                               setWorkoutPlans(workoutPlans.filter(p => p.id !== ex.id));
@@ -1323,7 +1500,7 @@ export default function App() {
                                         }
                                         const res = await fetch('/api/workout-logs', {
                                           method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
+                                          headers: { 'Content-Type': 'application/json', ...authHeaders },
                                           body: JSON.stringify({
                                             userId: currentUser.id,
                                             exerciseId: ex.exerciseId,
@@ -1339,7 +1516,7 @@ export default function App() {
                                           alert('Exercício registrado com sucesso!');
                                         }
                                       }}
-                                      className="w-full py-2 rounded-lg bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500 hover:text-white transition-colors text-sm font-bold"
+                                      className="theme-soft-button w-full py-2 rounded-lg transition-colors text-sm font-bold"
                                     >
                                       Concluir Exercício
                                     </button>
@@ -1370,7 +1547,7 @@ export default function App() {
                                             onClick={async () => {
                                               console.log(`Attempting to delete workout log: ${log.id}`);
                                               if(confirm('Excluir este registro de exercício?')) {
-                                                const res = await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE' });
+                                                const res = await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE', headers: authHeaders });
                                                 console.log(`Delete log response status: ${res.status}`);
                                                 if (res.ok) {
                                                   setWorkoutLogs(workoutLogs.filter(l => l.id !== log.id));
@@ -1464,7 +1641,7 @@ export default function App() {
                 <div className="text-white/80 text-lg font-medium">Meta Semanal Atingida</div>
                 <div className="w-full bg-white/10 h-3 rounded-full mt-4 overflow-hidden">
                   <div 
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500" 
+                    className="theme-progress-fill h-full" 
                     style={{ width: `${Math.min(Math.round((completedWorkouts.filter(w => w.userId === currentUser.id).length / 5) * 100), 100)}%` }}
                   ></div>
                 </div>
@@ -1530,7 +1707,7 @@ export default function App() {
                           <button 
                             onClick={async () => {
                               if(confirm('Excluir este registro de exercício?')) {
-                                await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE' });
+                                await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE', headers: authHeaders });
                                 setWorkoutLogs(workoutLogs.filter(l => l.id !== log.id));
                               }
                             }}
@@ -1656,7 +1833,7 @@ export default function App() {
                             <button onClick={() => setEditingExercise(ex)} className="btn-secondary flex-1 py-2 rounded-lg text-sm flex items-center justify-center gap-1"><Edit2 size={14}/> Editar</button>
                             <button onClick={async () => {
                               if(confirm('Tem certeza que deseja excluir este exercício?')) {
-                                await fetch(`/api/exercises/${ex.id}`, { method: 'DELETE' });
+                                await fetch(`/api/exercises/${ex.id}`, { method: 'DELETE', headers: authHeaders });
                                 setExercises(exercises.filter(e => e.id !== ex.id));
                               }
                             }} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex-1 py-2 rounded-lg text-sm flex items-center justify-center gap-1"><Trash2 size={14}/> Excluir</button>
@@ -1721,7 +1898,7 @@ export default function App() {
                     filteredStudents.map(student => (
                         <div key={student.id} className="glass-panel p-5 rounded-xl flex justify-between items-center border border-white/10 hover:border-white/30 transition-colors">
                           <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold border-2 border-white/20 overflow-hidden flex-shrink-0">
+                            <div className="theme-avatar w-12 h-12 rounded-full flex items-center justify-center text-white font-bold border-2 border-white/20 overflow-hidden flex-shrink-0">
                               {student.photo && student.photo.trim() !== '' ? (
                                 <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
                               ) : (
@@ -1739,7 +1916,7 @@ export default function App() {
                           <button 
                             onClick={async () => {
                               if(confirm(`Tem certeza que deseja excluir o aluno ${student.name}? Todos os seus dados (treinos, logs, plano) serão removidos permanentemente.`)) {
-                                await fetch(`/api/users/${student.id}`, { method: 'DELETE' });
+                                await fetch(`/api/users/${student.id}`, { method: 'DELETE', headers: authHeaders });
                                 setUsers(users.filter(u => u.id !== student.id));
                                 setWorkoutPlans(workoutPlans.filter(p => p.studentId !== student.id));
                                 setCompletedWorkouts(completedWorkouts.filter(w => w.userId !== student.id));
@@ -1818,7 +1995,7 @@ export default function App() {
                         </div>
                         <button onClick={async () => {
                           if (confirm('Remover este instrutor?')) {
-                            await fetch(`/api/users/${instructor.id}`, { method: 'DELETE' });
+                            await fetch(`/api/users/${instructor.id}`, { method: 'DELETE', headers: authHeaders });
                             setUsers(users.filter(u => u.id !== instructor.id));
                           }
                         }} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors px-4 py-2 rounded-lg text-sm">Remover</button>
@@ -1868,7 +2045,7 @@ export default function App() {
               e.preventDefault();
               const res = await fetch('/api/workout-plans', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                   studentId: parseInt(selectedStudentForPlan),
                   dayIndex: selectedDayForPlan,
@@ -2093,7 +2270,7 @@ export default function App() {
               <X size={24} />
             </button>
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-bold border-2 border-white/20 overflow-hidden">
+              <div className="theme-avatar w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-white/20 overflow-hidden">
                 {selectedStudent.photo && selectedStudent.photo.trim() !== '' ? (
                   <img src={selectedStudent.photo} alt={selectedStudent.name} className="w-full h-full object-cover" />
                 ) : (
@@ -2170,7 +2347,7 @@ export default function App() {
                       <button 
                         onClick={async () => {
                           if(confirm('Excluir este registro de exercício?')) {
-                            await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE' });
+                            await fetch(`/api/workout-logs/${log.id}`, { method: 'DELETE', headers: authHeaders });
                             setWorkoutLogs(workoutLogs.filter(l => l.id !== log.id));
                           }
                         }}
