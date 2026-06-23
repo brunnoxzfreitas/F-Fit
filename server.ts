@@ -77,6 +77,20 @@ db.exec(`
     date TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS workout_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    workoutId INTEGER,
+    dayIndex INTEGER NOT NULL,
+    difficulty TEXT NOT NULL,
+    feeling TEXT NOT NULL,
+    pain TEXT,
+    notes TEXT,
+    date TEXT NOT NULL,
+    FOREIGN KEY(userId) REFERENCES users(id),
+    FOREIGN KEY(workoutId) REFERENCES completed_workouts(id)
+  );
+
   CREATE TABLE IF NOT EXISTS workout_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER NOT NULL,
@@ -154,6 +168,7 @@ try {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_workout_logs_user ON workout_logs(userId);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_date ON workout_logs(date);
+    CREATE INDEX IF NOT EXISTS idx_workout_feedback_user ON workout_feedback(userId);
     CREATE INDEX IF NOT EXISTS idx_workout_plans_student ON workout_plans(studentId);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_instructor ON users(instructorId);
@@ -409,6 +424,7 @@ async function startServer() {
       }
       db.transaction(() => {
         db.prepare("DELETE FROM workout_plans WHERE studentId = ?").run(userId);
+        db.prepare("DELETE FROM workout_feedback WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM workout_logs WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM completed_workouts WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM workout_sessions WHERE userId = ?").run(userId);
@@ -485,6 +501,40 @@ async function startServer() {
   app.delete("/api/completed-workouts/:id", (req, res) => {
     db.prepare("DELETE FROM completed_workouts WHERE id = ?").run(req.params.id);
     res.json({ success: true });
+  });
+
+  // Workout Feedback
+  app.get("/api/workout-feedback", authenticate, (req, res) => {
+    try {
+      const feedback = db.prepare("SELECT * FROM workout_feedback ORDER BY date DESC").all();
+      res.json(feedback);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao buscar feedbacks' });
+    }
+  });
+
+  app.post("/api/workout-feedback", authenticate, (req, res) => {
+    try {
+      const { userId, workoutId, dayIndex, difficulty, feeling, pain, notes, date } = req.body;
+      const stmt = db.prepare(`
+        INSERT INTO workout_feedback (userId, workoutId, dayIndex, difficulty, feeling, pain, notes, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const info = stmt.run(userId, workoutId || null, dayIndex, difficulty, feeling, pain || '', notes || '', date);
+      const newFeedback = db.prepare("SELECT * FROM workout_feedback WHERE id = ?").get(info.lastInsertRowid);
+      res.json(newFeedback);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao salvar feedback' });
+    }
+  });
+
+  app.delete("/api/workout-feedback/:id", authenticate, (req, res) => {
+    try {
+      db.prepare("DELETE FROM workout_feedback WHERE id = ?").run(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao deletar feedback' });
+    }
   });
 
   // Workout Logs (Exercises completed with reps and weight)

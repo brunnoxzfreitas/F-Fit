@@ -60,6 +60,7 @@ export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [exercises, setExercises] = useState<any[]>([]);
   const [completedWorkouts, setCompletedWorkouts] = useState<any[]>([]);
+  const [workoutFeedback, setWorkoutFeedback] = useState<any[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<any[]>([]);
   const [workoutPlans, setWorkoutPlans] = useState<any[]>([]);
   const [individualWorkouts, setIndividualWorkouts] = useState<any[]>([]);
@@ -111,6 +112,8 @@ export default function App() {
   const [newStudent, setNewStudent] = useState({ name: '', email: '', password: '', objective: 'saude', instructorId: '' });
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [selectedProgressStudentId, setSelectedProgressStudentId] = useState('');
+  const [feedbackModal, setFeedbackModal] = useState<any>(null);
+  const [feedbackForm, setFeedbackForm] = useState({ difficulty: 'medio', feeling: 'bem', pain: '', notes: '' });
 
   // Register state
   const [isRegistering, setIsRegistering] = useState(false);
@@ -201,6 +204,7 @@ export default function App() {
       loadArray('/api/users', setUsers);
     }
     loadArray('/api/workout-logs', setWorkoutLogs);
+    loadArray('/api/workout-feedback', setWorkoutFeedback);
   }, [currentUser, authToken]);
 
   useEffect(() => {
@@ -462,6 +466,40 @@ export default function App() {
       }
     } catch {
       alert('Erro ao atualizar limite.');
+    }
+  };
+
+  const handleSaveWorkoutFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackModal) return;
+
+    try {
+      const res = await fetch('/api/workout-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({
+          userId: feedbackModal.userId,
+          workoutId: feedbackModal.workoutId,
+          dayIndex: feedbackModal.dayIndex,
+          difficulty: feedbackForm.difficulty,
+          feeling: feedbackForm.feeling,
+          pain: feedbackForm.pain,
+          notes: feedbackForm.notes,
+          date: new Date().toISOString()
+        })
+      });
+
+      if (res.ok) {
+        const newFeedback = await res.json();
+        setWorkoutFeedback([newFeedback, ...workoutFeedback]);
+        setFeedbackModal(null);
+        setFeedbackForm({ difficulty: 'medio', feeling: 'bem', pain: '', notes: '' });
+        alert('Feedback enviado com sucesso!');
+      } else {
+        alert('Erro ao salvar feedback.');
+      }
+    } catch {
+      alert('Erro ao salvar feedback.');
     }
   };
 
@@ -839,6 +877,9 @@ export default function App() {
   const progressWorkoutLogs = useMemo(() => (
     selectedProgressUserId ? workoutLogs.filter(log => log.userId === selectedProgressUserId) : []
   ), [workoutLogs, selectedProgressUserId]);
+  const progressWorkoutFeedback = useMemo(() => (
+    selectedProgressUserId ? workoutFeedback.filter(item => item.userId === selectedProgressUserId) : []
+  ), [workoutFeedback, selectedProgressUserId]);
   const progressGoalPercent = Math.min(Math.round((progressCompletedWorkouts.length / 5) * 100), 100);
 
   if (!currentUser) {
@@ -1671,6 +1712,9 @@ export default function App() {
                                 if (res.ok) {
                                   const newWorkout = await res.json();
                                   setCompletedWorkouts([...completedWorkouts, newWorkout]);
+                                  if (currentUser.type === 'aluno') {
+                                    setFeedbackModal({ userId: targetStudentId, workoutId: newWorkout.id, dayIndex: idx });
+                                  }
                                   alert('Dia de treino marcado como concluído!');
                                 }
                               }}
@@ -1764,6 +1808,34 @@ export default function App() {
                 })}
               </div>
             )}
+            <div className="mt-8 mb-6">
+              <h4 className="text-xl font-bold text-white mb-4">Feedbacks dos Treinos</h4>
+              <div className="glass-panel p-4 sm:p-6 rounded-xl max-h-80 overflow-y-auto">
+                {progressWorkoutFeedback.length === 0 ? (
+                  <p className="text-white/60 text-center py-4">Nenhum feedback registrado ainda.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {progressWorkoutFeedback.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(item => (
+                      <div key={item.id} className="bg-white/5 p-4 rounded-lg border border-white/10">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                          <div>
+                            <h5 className="font-bold text-white">{['Segunda', 'TerÃ§a', 'Quarta', 'Quinta', 'Sexta', 'SÃ¡bado', 'Domingo'][item.dayIndex]}</h5>
+                            <p className="text-white/50 text-xs">{new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs font-bold">
+                            <span className="px-3 py-1 rounded-full bg-white/10 text-white">Dificuldade: {item.difficulty}</span>
+                            <span className="px-3 py-1 rounded-full bg-white/10 text-white">Sensação: {item.feeling}</span>
+                          </div>
+                        </div>
+                        {item.pain && <p className="text-white/70 text-sm"><strong>Dor/desconforto:</strong> {item.pain}</p>}
+                        {item.notes && <p className="text-white/70 text-sm mt-1"><strong>Observações:</strong> {item.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="glass-panel p-6 sm:p-8 rounded-xl text-center">
                 <div className="text-5xl font-black text-gradient mb-4">
@@ -2472,6 +2544,57 @@ export default function App() {
                 </select>
               </div>
               <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg mt-4">Salvar Aluno</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {feedbackModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-4">
+          <div className="glass-panel p-6 sm:p-8 rounded-[25px] w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setFeedbackModal(null)} className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-all">
+              <X size={24} />
+            </button>
+            <h2 className="text-xl sm:text-2xl font-bold text-center mb-2 text-white">Como foi o treino?</h2>
+            <p className="text-white/60 text-center mb-6 text-sm">Esse feedback ajuda o instrutor a acompanhar sua evolução.</p>
+            <form onSubmit={handleSaveWorkoutFeedback} className="space-y-5">
+              <div>
+                <label className="block text-white font-semibold mb-2">Dificuldade:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ['facil', 'Fácil'],
+                    ['medio', 'Médio'],
+                    ['dificil', 'Difícil']
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setFeedbackForm({...feedbackForm, difficulty: value})}
+                      className={`rounded-xl border px-3 py-3 text-sm font-bold transition-all ${feedbackForm.difficulty === value ? 'theme-selected-card text-white' : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-white font-semibold mb-2">Sensação geral:</label>
+                <select value={feedbackForm.feeling} onChange={e => setFeedbackForm({...feedbackForm, feeling: e.target.value})} className="glass-input w-full p-3 rounded-xl text-white bg-transparent">
+                  <option value="bem" className="text-black">Bem</option>
+                  <option value="cansado" className="text-black">Cansado</option>
+                  <option value="muito_bem" className="text-black">Muito bem</option>
+                  <option value="dor" className="text-black">Com dor/desconforto</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-white font-semibold mb-1">Dor ou desconforto (opcional):</label>
+                <input type="text" value={feedbackForm.pain} onChange={e => setFeedbackForm({...feedbackForm, pain: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Ex: joelho, lombar, ombro..." />
+              </div>
+              <div>
+                <label className="block text-white font-semibold mb-1">Observações (opcional):</label>
+                <textarea value={feedbackForm.notes} onChange={e => setFeedbackForm({...feedbackForm, notes: e.target.value})} className="glass-input w-full p-3 rounded-xl" rows={3} placeholder="Conte como foi o treino, energia, dificuldade, carga..."></textarea>
+              </div>
+              <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg">Enviar Feedback</button>
             </form>
           </div>
         </div>
