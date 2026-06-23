@@ -2178,7 +2178,7 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Grupo Muscular:</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                <div className="muscle-group-grid">
                   {MUSCLE_GROUPS.map(group => {
                     const isSelected = newExercise.muscleGroup === group.value;
                     return (
@@ -2186,11 +2186,7 @@ export default function App() {
                         key={group.value}
                         type="button"
                         onClick={() => setNewExercise({...newExercise, muscleGroup: group.value})}
-                        className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-all ${
-                          isSelected
-                            ? 'border-white/70 bg-white/20 text-white shadow-lg scale-[1.02]'
-                            : 'border-white/10 bg-white/5 text-white/75 hover:border-white/35 hover:bg-white/10 hover:text-white'
-                        }`}
+                        className={`muscle-group-option ${isSelected ? 'active' : ''}`}
                       >
                         {group.label}
                       </button>
@@ -2251,7 +2247,7 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Grupo Muscular:</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                <div className="muscle-group-grid">
                   {MUSCLE_GROUPS.map(group => {
                     const isSelected = editingExercise.muscleGroup === group.value;
                     return (
@@ -2259,11 +2255,7 @@ export default function App() {
                         key={group.value}
                         type="button"
                         onClick={() => setEditingExercise({...editingExercise, muscleGroup: group.value})}
-                        className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-all ${
-                          isSelected
-                            ? 'border-white/70 bg-white/20 text-white shadow-lg scale-[1.02]'
-                            : 'border-white/10 bg-white/5 text-white/75 hover:border-white/35 hover:bg-white/10 hover:text-white'
-                        }`}
+                        className={`muscle-group-option ${isSelected ? 'active' : ''}`}
                       >
                         {group.label}
                       </button>
