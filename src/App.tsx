@@ -73,6 +73,7 @@ export default function App() {
   const [userThemes, setUserThemes] = useLocalStorage<Record<string, UserTheme>>('userColorThemes', {});
   const [lastColorTheme, setLastColorTheme] = useLocalStorage<UserTheme>('lastColorTheme', DEFAULT_THEME);
   const [authToken, setAuthToken] = useLocalStorage<string | null>('authToken', null);
+  const [isRestoringSession, setIsRestoringSession] = useState(Boolean(authToken));
   
   const [showUserTypeModal, setShowUserTypeModal] = useState(false);
   const [selectedUserType, setSelectedUserType] = useState('');
@@ -206,6 +207,49 @@ export default function App() {
   const authHeaders = useMemo(() => (
     authToken ? { Authorization: `Bearer ${authToken}` } : {}
   ), [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setIsRestoringSession(false);
+      return;
+    }
+
+    if (currentUser) {
+      setIsRestoringSession(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const restoreSession = async () => {
+      setIsRestoringSession(true);
+      try {
+        const res = await fetch('/api/me', {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const data = await res.json();
+
+        if (!isMounted) return;
+
+        if (res.ok && data.success && data.user) {
+          setCurrentUser(data.user);
+          setActiveTab(data.user.type === 'aluno' ? 'profile' : 'dashboard');
+        } else {
+          setAuthToken(null);
+        }
+      } catch {
+        if (isMounted) setAuthToken(null);
+      } finally {
+        if (isMounted) setIsRestoringSession(false);
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authToken, currentUser]);
 
   useEffect(() => {
     const loadArray = async (url: string, setter: React.Dispatch<React.SetStateAction<any[]>>, token?: string | null) => {
@@ -972,6 +1016,17 @@ export default function App() {
       return !lastWorkout || new Date(lastWorkout.date).getTime() < sevenDaysAgo;
     });
   }, [progressStudents, completedWorkouts]);
+
+  if (!currentUser && isRestoringSession) {
+    return (
+      <div className="container mx-auto px-4 py-8 relative z-10 min-h-screen flex flex-col items-center justify-center">
+        <div className="glass-panel rounded-[25px] p-8 w-full max-w-md text-center">
+          <h1 className="text-4xl sm:text-5xl font-black mb-3 title-glow tracking-tighter">F-fit</h1>
+          <p className="text-white/80 font-semibold">Restaurando sua sessão...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (

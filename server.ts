@@ -309,6 +309,17 @@ async function startServer() {
   };
 
   // Users
+  app.get("/api/me", authenticate, (req, res) => {
+    try {
+      const requester = (req as any).user as { id: number, type: string };
+      const user = db.prepare("SELECT id,name,email,type,age,objective,bio,photo,role,permissions,instructorId,studentLimit FROM users WHERE id = ?").get(requester.id) as any;
+      if (!user || user.type !== requester.type) return res.status(401).json({ error: 'Sessao invalida' });
+      res.json({ success: true, user });
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao restaurar sessao' });
+    }
+  });
+
   app.get("/api/users", authenticate, requireRole(['admin', 'instrutor']), (req, res) => {
     try {
       const requester = (req as any).user as { id: number, type: string };
