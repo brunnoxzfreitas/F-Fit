@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import crypto from "crypto";
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -200,6 +201,10 @@ if (firstInstructor) {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+  const jwtSecret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? crypto.randomBytes(48).toString('hex') : 'dev-secret');
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    console.warn('JWT_SECRET não configurado; usando segredo temporário em memória.');
+  }
 
   if (process.env.NODE_ENV === "production") {
     app.use(helmet());
@@ -211,7 +216,16 @@ async function startServer() {
       crossOriginResourcePolicy: false,
     }));
   }
-  app.use(cors());
+  const allowedOrigins = (process.env.CORS_ORIGIN || 'https://brunnoxzfreitas.github.io,http://localhost:3000,http://localhost:3001,http://localhost:3002')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Origem não permitida pelo CORS'));
+    }
+  }));
   // Basic rate limiter
   const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
   app.use(limiter);
@@ -229,7 +243,7 @@ async function startServer() {
       const match = bcrypt.compareSync(password, user.password);
       if (!match) return res.status(401).json({ success: false, message: "Credenciais inválidas" });
       const { password: _p, ...safeUser } = user;
-      const token = jwt.sign({ id: user.id, type: user.type }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '7d' });
+      const token = jwt.sign({ id: user.id, type: user.type }, jwtSecret, { expiresIn: '7d' });
       res.json({ success: true, user: safeUser, token });
     } catch (err) {
       res.status(500).json({ success: false, message: 'Erro no servidor' });
@@ -242,7 +256,7 @@ async function startServer() {
     if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Token ausente' });
     const token = auth.slice(7);
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret') as any;
+      const decoded = jwt.verify(token, jwtSecret) as any;
       (req as any).user = decoded;
       next();
     } catch (e) {
@@ -257,6 +271,25 @@ async function startServer() {
       if (!roles.includes(user.type)) return res.status(403).json({ error: 'Acesso negado' });
       next();
     };
+  };
+
+  const canAccessStudent = (requester: { id: number, type: string }, studentId: number) => {
+    if (requester.type === 'admin') return true;
+    if (requester.type === 'aluno') return requester.id === studentId;
+    if (requester.type === 'instrutor') {
+      const student = db.prepare("SELECT id FROM users WHERE id = ? AND type = 'aluno' AND instructorId = ?").get(studentId, requester.id);
+      return Boolean(student);
+    }
+    return false;
+  };
+
+  const requireStudentAccess = (studentId: number, req: express.Request, res: express.Response) => {
+    const requester = (req as any).user as { id: number, type: string };
+    if (!canAccessStudent(requester, Number(studentId))) {
+      res.status(403).json({ error: 'Acesso negado para este aluno' });
+      return false;
+    }
+    return true;
   };
 
   // Users
@@ -312,6 +345,10 @@ async function startServer() {
 
   app.put("/api/users/:id", authenticate, upload.single('photo'), (req, res) => {
     const userId = req.params.id;
+    const requester = (req as any).user as { id: number, type: string };
+    if (requester.type !== 'admin' && requester.id !== Number(userId)) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
     
     // Handle both FormData and JSON
     const name = req.body.name || req.body.name;
@@ -395,6 +432,10 @@ async function startServer() {
 
   app.put("/api/users/:id/photo", authenticate, upload.single('photo'), (req, res) => {
     const userId = req.params.id;
+    const requester = (req as any).user as { id: number, type: string };
+    if (requester.type !== 'admin' && requester.id !== Number(userId)) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     const photoPath = `/uploads/${req.file.filename}`;
     try {
@@ -485,20 +526,33 @@ async function startServer() {
   });
 
   // Completed Workouts
-  app.get("/api/completed-workouts", (req, res) => {
-    const workouts = db.prepare("SELECT * FROM completed_workouts").all();
+  app.get("/api/completed-workouts", authenticate, (req, res) => {
+    const requester = (req as any).user as { id: number, type: string };
+    const workouts = requester.type === 'admin'
+      ? db.prepare("SELECT * FROM completed_workouts").all()
+      : requester.type === 'instrutor'
+        ? db.prepare(`
+            SELECT cw.* FROM completed_workouts cw
+            JOIN users u ON u.id = cw.userId
+            WHERE u.instructorId = ?
+          `).all(requester.id)
+        : db.prepare("SELECT * FROM completed_workouts WHERE userId = ?").all(requester.id);
     res.json(workouts);
   });
 
-  app.post("/api/completed-workouts", (req, res) => {
+  app.post("/api/completed-workouts", authenticate, (req, res) => {
     const { userId, dayIndex, date } = req.body;
+    if (!requireStudentAccess(Number(userId), req, res)) return;
     const stmt = db.prepare("INSERT INTO completed_workouts (userId, dayIndex, date) VALUES (?, ?, ?)");
     const info = stmt.run(userId, dayIndex, date);
     const newWorkout = db.prepare("SELECT * FROM completed_workouts WHERE id = ?").get(info.lastInsertRowid);
     res.json(newWorkout);
   });
 
-  app.delete("/api/completed-workouts/:id", (req, res) => {
+  app.delete("/api/completed-workouts/:id", authenticate, (req, res) => {
+    const workout = db.prepare("SELECT userId FROM completed_workouts WHERE id = ?").get(req.params.id) as { userId: number } | undefined;
+    if (!workout) return res.status(404).json({ error: 'Treino não encontrado' });
+    if (!requireStudentAccess(workout.userId, req, res)) return;
     db.prepare("DELETE FROM completed_workouts WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
@@ -506,7 +560,17 @@ async function startServer() {
   // Workout Feedback
   app.get("/api/workout-feedback", authenticate, (req, res) => {
     try {
-      const feedback = db.prepare("SELECT * FROM workout_feedback ORDER BY date DESC").all();
+      const requester = (req as any).user as { id: number, type: string };
+      const feedback = requester.type === 'admin'
+        ? db.prepare("SELECT * FROM workout_feedback ORDER BY date DESC").all()
+        : requester.type === 'instrutor'
+          ? db.prepare(`
+              SELECT wf.* FROM workout_feedback wf
+              JOIN users u ON u.id = wf.userId
+              WHERE u.instructorId = ?
+              ORDER BY wf.date DESC
+            `).all(requester.id)
+          : db.prepare("SELECT * FROM workout_feedback WHERE userId = ? ORDER BY date DESC").all(requester.id);
       res.json(feedback);
     } catch (e) {
       res.status(500).json({ error: 'Erro ao buscar feedbacks' });
@@ -516,6 +580,7 @@ async function startServer() {
   app.post("/api/workout-feedback", authenticate, (req, res) => {
     try {
       const { userId, workoutId, dayIndex, difficulty, feeling, pain, notes, date } = req.body;
+      if (!requireStudentAccess(Number(userId), req, res)) return;
       const stmt = db.prepare(`
         INSERT INTO workout_feedback (userId, workoutId, dayIndex, difficulty, feeling, pain, notes, date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -530,6 +595,9 @@ async function startServer() {
 
   app.delete("/api/workout-feedback/:id", authenticate, (req, res) => {
     try {
+      const feedback = db.prepare("SELECT userId FROM workout_feedback WHERE id = ?").get(req.params.id) as { userId: number } | undefined;
+      if (!feedback) return res.status(404).json({ error: 'Feedback não encontrado' });
+      if (!requireStudentAccess(feedback.userId, req, res)) return;
       db.prepare("DELETE FROM workout_feedback WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (e) {
@@ -540,12 +608,22 @@ async function startServer() {
   // Workout Logs (Exercises completed with reps and weight)
   app.get("/api/workout-logs", authenticate, (req, res) => {
     try {
-      const logs = db.prepare(`
-        SELECT wl.*, e.name as exerciseName 
-        FROM workout_logs wl 
+      const requester = (req as any).user as { id: number, type: string };
+      const baseQuery = `
+        SELECT wl.*, e.name as exerciseName
+        FROM workout_logs wl
         JOIN exercises e ON wl.exerciseId = e.id
-        ORDER BY wl.date DESC
-      `).all();
+      `;
+      const logs = requester.type === 'admin'
+        ? db.prepare(`${baseQuery} ORDER BY wl.date DESC`).all()
+        : requester.type === 'instrutor'
+          ? db.prepare(`
+              ${baseQuery}
+              JOIN users u ON u.id = wl.userId
+              WHERE u.instructorId = ?
+              ORDER BY wl.date DESC
+            `).all(requester.id)
+          : db.prepare(`${baseQuery} WHERE wl.userId = ? ORDER BY wl.date DESC`).all(requester.id);
       res.json(logs);
     } catch (e) {
       res.status(500).json({ error: 'Erro ao buscar logs' });
@@ -555,6 +633,7 @@ async function startServer() {
   app.post("/api/workout-logs", authenticate, (req, res) => {
     try {
       const { userId, exerciseId, reps, weight, sets, notes, date } = req.body;
+      if (!requireStudentAccess(Number(userId), req, res)) return;
       const stmt = db.prepare("INSERT INTO workout_logs (userId, exerciseId, reps, weight, sets, notes, date) VALUES (?, ?, ?, ?, ?, ?, ?)");
       const info = stmt.run(userId, exerciseId, reps, weight, sets || 1, notes || '', date);
       const newLog = db.prepare(`
@@ -571,6 +650,9 @@ async function startServer() {
 
   app.delete("/api/workout-logs/:id", authenticate, (req, res) => {
     try {
+      const log = db.prepare("SELECT userId FROM workout_logs WHERE id = ?").get(req.params.id) as { userId: number } | undefined;
+      if (!log) return res.status(404).json({ error: 'Log não encontrado' });
+      if (!requireStudentAccess(log.userId, req, res)) return;
       db.prepare("DELETE FROM workout_logs WHERE id = ?").run(req.params.id);
       res.json({ success: true });
     } catch (e) {
@@ -579,18 +661,29 @@ async function startServer() {
   });
 
   // Workout Plans
-  app.get("/api/workout-plans", (req, res) => {
-    const plans = db.prepare(`
+  app.get("/api/workout-plans", authenticate, (req, res) => {
+    const requester = (req as any).user as { id: number, type: string };
+    const baseQuery = `
       SELECT wp.*, e.name as exerciseName, e.video, e.videoType, e.description
-      FROM workout_plans wp 
+      FROM workout_plans wp
       JOIN exercises e ON wp.exerciseId = e.id
-    `).all();
+    `;
+    const plans = requester.type === 'admin'
+      ? db.prepare(baseQuery).all()
+      : requester.type === 'instrutor'
+        ? db.prepare(`
+            ${baseQuery}
+            JOIN users u ON u.id = wp.studentId
+            WHERE u.instructorId = ?
+          `).all(requester.id)
+        : db.prepare(`${baseQuery} WHERE wp.studentId = ?`).all(requester.id);
     res.json(plans);
   });
 
   app.post("/api/workout-plans", authenticate, requireRole(['admin','instrutor']), (req, res) => {
     try {
       const { studentId, dayIndex, exerciseId, targetReps, targetWeight } = req.body;
+      if (!requireStudentAccess(Number(studentId), req, res)) return;
       const stmt = db.prepare("INSERT INTO workout_plans (studentId, dayIndex, exerciseId, targetReps, targetWeight) VALUES (?, ?, ?, ?, ?)");
       const info = stmt.run(studentId, dayIndex, exerciseId, targetReps, targetWeight);
       const newPlan = db.prepare(`
@@ -605,13 +698,16 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/workout-plans/:id", (req, res) => {
-    console.log(`Deleting workout plan: ${req.params.id}`);
+  app.delete("/api/workout-plans/:id", authenticate, requireRole(['admin','instrutor']), (req, res) => {
+    const plan = db.prepare("SELECT studentId FROM workout_plans WHERE id = ?").get(req.params.id) as { studentId: number } | undefined;
+    if (!plan) return res.status(404).json({ error: 'Plano não encontrado' });
+    if (!requireStudentAccess(plan.studentId, req, res)) return;
     db.prepare("DELETE FROM workout_plans WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
 
-  app.delete("/api/workout-plans/student/:studentId", (req, res) => {
+  app.delete("/api/workout-plans/student/:studentId", authenticate, requireRole(['admin','instrutor']), (req, res) => {
+    if (!requireStudentAccess(Number(req.params.studentId), req, res)) return;
     db.prepare("DELETE FROM workout_plans WHERE studentId = ?").run(req.params.studentId);
     res.json({ success: true });
   });
@@ -620,6 +716,7 @@ async function startServer() {
   app.post("/api/workout-sessions", authenticate, (req, res) => {
     try {
       const { userId, startTime } = req.body;
+      if (!requireStudentAccess(Number(userId), req, res)) return;
       const date = new Date(startTime).toISOString().split('T')[0];
       const stmt = db.prepare("INSERT INTO workout_sessions (userId, startTime, date) VALUES (?, ?, ?)");
       const info = stmt.run(userId, startTime, date);
@@ -633,8 +730,9 @@ async function startServer() {
   app.put("/api/workout-sessions/:id", authenticate, (req, res) => {
     try {
       const { endTime, sessionNotes } = req.body;
-      const session = db.prepare("SELECT startTime FROM workout_sessions WHERE id = ?").get(req.params.id) as { startTime: string } | undefined;
+      const session = db.prepare("SELECT userId,startTime FROM workout_sessions WHERE id = ?").get(req.params.id) as { userId: number, startTime: string } | undefined;
       if (!session) return res.status(404).json({ error: "Sessão não encontrada" });
+      if (!requireStudentAccess(session.userId, req, res)) return;
       let totalDuration = null;
       if (endTime) {
         const start = new Date(session.startTime).getTime();
@@ -652,7 +750,17 @@ async function startServer() {
 
   app.get("/api/workout-sessions", authenticate, (req, res) => {
     try {
-      const sessions = db.prepare("SELECT * FROM workout_sessions ORDER BY date DESC").all();
+      const requester = (req as any).user as { id: number, type: string };
+      const sessions = requester.type === 'admin'
+        ? db.prepare("SELECT * FROM workout_sessions ORDER BY date DESC").all()
+        : requester.type === 'instrutor'
+          ? db.prepare(`
+              SELECT ws.* FROM workout_sessions ws
+              JOIN users u ON u.id = ws.userId
+              WHERE u.instructorId = ?
+              ORDER BY ws.date DESC
+            `).all(requester.id)
+          : db.prepare("SELECT * FROM workout_sessions WHERE userId = ? ORDER BY date DESC").all(requester.id);
       res.json(sessions);
     } catch (e) {
       res.status(500).json({ error: 'Erro ao buscar sessões' });

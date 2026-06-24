@@ -183,8 +183,8 @@ export default function App() {
 
     // Fetch initial data from our new backend
     loadArray('/api/exercises', setExercises);
-    loadArray('/api/completed-workouts', setCompletedWorkouts);
-    loadArray('/api/workout-plans', setWorkoutPlans);
+    loadArray('/api/completed-workouts', setCompletedWorkouts, authToken);
+    loadArray('/api/workout-plans', setWorkoutPlans, authToken);
   }, []);
 
   useEffect(() => {
@@ -203,6 +203,8 @@ export default function App() {
     if (currentUser.type === 'admin' || currentUser.type === 'instrutor') {
       loadArray('/api/users', setUsers);
     }
+    loadArray('/api/completed-workouts', setCompletedWorkouts);
+    loadArray('/api/workout-plans', setWorkoutPlans);
     loadArray('/api/workout-logs', setWorkoutLogs);
     loadArray('/api/workout-feedback', setWorkoutFeedback);
   }, [currentUser, authToken]);
@@ -1691,7 +1693,7 @@ export default function App() {
                                   new Date(w.date).toDateString() === new Date().toDateString()
                                 );
                                 if (workoutToDelete && confirm('Desmarcar este dia como concluído?')) {
-                                  await fetch(`/api/completed-workouts/${workoutToDelete.id}`, { method: 'DELETE' });
+                                  await fetch(`/api/completed-workouts/${workoutToDelete.id}`, { method: 'DELETE', headers: authHeaders });
                                   setCompletedWorkouts(completedWorkouts.filter(cw => cw.id !== workoutToDelete.id));
                                   alert('Treino desmarcado!');
                                 }
@@ -1706,7 +1708,7 @@ export default function App() {
                                 // Save completed workout
                                 const res = await fetch('/api/completed-workouts', {
                                   method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
+                                  headers: { 'Content-Type': 'application/json', ...authHeaders },
                                   body: JSON.stringify({ userId: targetStudentId, dayIndex: idx, date: new Date().toISOString() })
                                 });
                                 if (res.ok) {
@@ -1873,7 +1875,7 @@ export default function App() {
                         <button 
                           onClick={async () => {
                             if(confirm('Excluir este registro de treino concluído?')) {
-                              await fetch(`/api/completed-workouts/${w.id}`, { method: 'DELETE' });
+                              await fetch(`/api/completed-workouts/${w.id}`, { method: 'DELETE', headers: authHeaders });
                               setCompletedWorkouts(completedWorkouts.filter(cw => cw.id !== w.id));
                             }
                           }}
@@ -2645,7 +2647,7 @@ export default function App() {
                     <button 
                       onClick={async () => {
                         if(confirm('Excluir este registro de treino concluído?')) {
-                          await fetch(`/api/completed-workouts/${w.id}`, { method: 'DELETE' });
+                          await fetch(`/api/completed-workouts/${w.id}`, { method: 'DELETE', headers: authHeaders });
                           setCompletedWorkouts(completedWorkouts.filter(cw => cw.id !== w.id));
                         }
                       }}
