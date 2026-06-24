@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { Settings, User, Activity, BarChart2, Shield, LogOut, Plus, Edit2, Trash2, Play, X, ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Settings, User, Activity, BarChart2, Shield, LogOut, Plus, Edit2, Trash2, Play, X, ChevronDown, Search, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 import Cropper from 'react-easy-crop';
@@ -123,6 +123,7 @@ export default function App() {
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   // Exercise Logs state
   const [exerciseLogsInput, setExerciseLogsInput] = useState<Record<string, { reps: string, weight: string }>>({});
@@ -167,6 +168,39 @@ export default function App() {
 
   const applyThemePreset = (theme: UserTheme) => {
     saveCurrentTheme(theme);
+  };
+
+  const renderPasswordInput = (
+    id: string,
+    value: string,
+    onChange: (value: string) => void,
+    placeholder: string,
+    className = 'glass-input w-full p-4 pr-12 rounded-xl',
+    required = false
+  ) => {
+    const isVisible = Boolean(visiblePasswords[id]);
+
+    return (
+      <div className="relative">
+        <input
+          type={isVisible ? 'text' : 'password'}
+          required={required}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className={className}
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={() => setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }))}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors p-1"
+          aria-label={isVisible ? 'Ocultar senha' : 'Mostrar senha'}
+          title={isVisible ? 'Ocultar senha' : 'Mostrar senha'}
+        >
+          {isVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    );
   };
 
   const authHeaders = useMemo(() => (
@@ -974,7 +1008,7 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-2">Senha:</label>
-                <input type="password" required value={regPassword} onChange={e => setRegPassword(e.target.value)} className="glass-input w-full p-4 rounded-xl" placeholder="123456" />
+                {renderPasswordInput('register', regPassword, setRegPassword, '123456', 'glass-input w-full p-4 pr-12 rounded-xl', true)}
               </div>
               <button type="submit" className="btn-primary w-full py-4 rounded-xl font-bold text-lg uppercase tracking-wider">Cadastrar</button>
               <p className="text-center text-white/80 mt-4">
@@ -1002,7 +1036,7 @@ export default function App() {
               
               <div>
                 <label className="block text-white font-semibold mb-2">Senha:</label>
-                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full p-4 rounded-xl" placeholder="123456" />
+                {renderPasswordInput('login', password, setPassword, '123456', 'glass-input w-full p-4 pr-12 rounded-xl', true)}
               </div>
               
               <button type="submit" className="btn-primary w-full py-4 rounded-xl font-bold text-lg uppercase tracking-wider">Entrar</button>
@@ -1380,7 +1414,13 @@ export default function App() {
                   </div>
                   <div>
                     <label className="block text-white font-semibold mb-1">Nova Senha (opcional):</label>
-                    <input type="password" value={profileForm.password} onChange={e => setProfileForm({...profileForm, password: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Deixe em branco para manter a atual" />
+                    {renderPasswordInput(
+                      'profile',
+                      profileForm.password,
+                      value => setProfileForm({...profileForm, password: value}),
+                      'Deixe em branco para manter a atual',
+                      'glass-input w-full p-3 pr-12 rounded-xl'
+                    )}
                   </div>
                   <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg mt-4">Salvar Alterações</button>
                 </form>
@@ -2647,7 +2687,14 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Senha:</label>
-                <input type="password" required value={newInstructor.password} onChange={e => setNewInstructor({...newInstructor, password: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Senha de acesso" />
+                {renderPasswordInput(
+                  'new-instructor',
+                  newInstructor.password,
+                  value => setNewInstructor({...newInstructor, password: value}),
+                  'Senha de acesso',
+                  'glass-input w-full p-3 pr-12 rounded-xl',
+                  true
+                )}
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Limite de alunos:</label>
@@ -2681,7 +2728,14 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Senha:</label>
-                <input type="password" required value={newStudent.password} onChange={e => setNewStudent({...newStudent, password: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Senha de acesso" />
+                {renderPasswordInput(
+                  'new-student',
+                  newStudent.password,
+                  value => setNewStudent({...newStudent, password: value}),
+                  'Senha de acesso',
+                  'glass-input w-full p-3 pr-12 rounded-xl',
+                  true
+                )}
               </div>
               {currentUser.type === 'admin' && (
                 <div>
