@@ -12,6 +12,12 @@ type UserTheme = {
   accent: string;
 };
 
+type SelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
 const DEFAULT_THEME: UserTheme = {
   preset: 'ffit',
   primary: '#22c55e',
@@ -34,6 +40,21 @@ const PRESET_LABELS: Record<string, string> = {
   focus: 'Foco',
   rose: 'Rosa'
 };
+
+const OBJECTIVE_OPTIONS: SelectOption[] = [
+  { value: 'hipertrofia', label: 'Hipertrofia' },
+  { value: 'emagrecimento', label: 'Emagrecimento' },
+  { value: 'forca', label: 'Forca' },
+  { value: 'resistencia', label: 'Resistencia' },
+  { value: 'saude', label: 'Saude e Bem-estar' }
+];
+
+const FEELING_OPTIONS: SelectOption[] = [
+  { value: 'bem', label: 'Bem' },
+  { value: 'cansado', label: 'Cansado' },
+  { value: 'muito_bem', label: 'Muito bem' },
+  { value: 'dor', label: 'Com dor/desconforto' }
+];
 
 const MUSCLE_GROUPS = [
   { value: 'peito', label: 'Peito' },
@@ -125,6 +146,7 @@ export default function App() {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  const [openSelectId, setOpenSelectId] = useState<string | null>(null);
 
   // Exercise Logs state
   const [exerciseLogsInput, setExerciseLogsInput] = useState<Record<string, { reps: string, weight: string }>>({});
@@ -200,6 +222,74 @@ export default function App() {
         >
           {isVisible ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
+      </div>
+    );
+  };
+
+  const renderCustomSelect = (
+    id: string,
+    value: string,
+    onChange: (value: string) => void,
+    options: SelectOption[],
+    placeholder: string,
+    className = 'glass-input w-full p-3 rounded-xl'
+  ) => {
+    const selectedOption = options.find(option => option.value === value);
+    const isOpen = openSelectId === id;
+
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpenSelectId(isOpen ? null : id)}
+          className={`${className} flex items-center justify-between gap-3 text-left text-white`}
+          aria-expanded={isOpen}
+        >
+          <span className={selectedOption ? 'text-white' : 'text-white/60'}>
+            {selectedOption?.label || placeholder}
+          </span>
+          <ChevronDown size={18} className={`text-white/60 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isOpen && (
+          <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[70] glass-panel rounded-xl border border-white/10 overflow-hidden shadow-2xl max-h-64 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('');
+                setOpenSelectId(null);
+              }}
+              className={`w-full px-4 py-3 text-left text-sm transition-all ${
+                value === ''
+                  ? 'theme-selected-card text-white'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              {placeholder}
+            </button>
+            {options.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                disabled={option.disabled}
+                onClick={() => {
+                  if (option.disabled) return;
+                  onChange(option.value);
+                  setOpenSelectId(null);
+                }}
+                className={`w-full px-4 py-3 text-left text-sm transition-all ${
+                  value === option.value
+                    ? 'theme-selected-card text-white'
+                    : option.disabled
+                      ? 'text-white/30 cursor-not-allowed'
+                      : 'text-white/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -1331,13 +1421,13 @@ export default function App() {
                   {currentUser.type === 'aluno' && (
                     <div>
                       <label className="block text-white font-semibold mb-1">Objetivo:</label>
-                      <select required value={profileForm.objective} onChange={e => setProfileForm({...profileForm, objective: e.target.value})} className="glass-input w-full p-3 rounded-xl text-black">
-                        <option value="hipertrofia">Hipertrofia</option>
-                        <option value="emagrecimento">Emagrecimento</option>
-                        <option value="forca">Força</option>
-                        <option value="resistencia">Resistência</option>
-                        <option value="saude">Saúde e Bem-estar</option>
-                      </select>
+                      {renderCustomSelect(
+                        'profile-objective',
+                        profileForm.objective,
+                        value => setProfileForm({...profileForm, objective: value}),
+                        OBJECTIVE_OPTIONS,
+                        'Selecione um objetivo...'
+                      )}
                     </div>
                   )}
                   {currentUser.type === 'instrutor' && (
@@ -1622,53 +1712,57 @@ export default function App() {
             
             {currentUser.type !== 'aluno' && (
               <div className="mb-8">
-                <label className="block text-white font-semibold mb-2">Selecione um Aluno para ver/editar o plano:</label>
-                <div className="relative">
-                  <select 
-                    value={selectedStudentForPlan} 
-                    onChange={e => setSelectedStudentForPlan(e.target.value)} 
-                    className="glass-input w-full p-3 rounded-xl appearance-none pr-10"
-                  >
-                    <option value="" className="text-black">Selecione um aluno...</option>
-                    {users.filter(u => u.type === 'aluno').map(student => (
-                      <option key={student.id} value={student.id} className="text-black flex items-center gap-2">
-                        {student.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                    <ChevronDown size={16} className="text-white/60" />
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+                  <div>
+                    <label className="block text-white font-semibold mb-1">Aluno do plano semanal</label>
+                    <p className="text-white/60 text-sm">Escolha um aluno para ver ou editar os treinos da semana.</p>
                   </div>
+                  {selectedStudentForPlan && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentForPlan('')}
+                      className="self-start sm:self-auto bg-white/10 hover:bg-white/15 text-white/80 px-3 py-2 rounded-xl text-sm font-semibold transition-all"
+                    >
+                      Limpar seleção
+                    </button>
+                  )}
                 </div>
                 
                 {/* Student selection cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-                  {users.filter(u => u.type === 'aluno').map(student => (
-                    <div 
-                      key={student.id}
-                      onClick={() => setSelectedStudentForPlan(student.id.toString())}
-                      className={`glass-panel p-3 rounded-xl cursor-pointer border transition-all hover:border-white/40 ${
-                        selectedStudentForPlan === student.id.toString() 
-                          ? 'theme-selected-card' 
-                          : 'border-white/10 hover:border-white/30'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="theme-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold border border-white/20 overflow-hidden flex-shrink-0">
-                          {student.photo && student.photo.trim() !== '' ? (
-                            <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
-                          ) : (
-                            student.name.charAt(0).toUpperCase()
-                          )}
+                {users.filter(u => u.type === 'aluno').length === 0 ? (
+                  <div className="glass-panel p-4 rounded-xl text-center border border-white/10">
+                    <p className="text-white/60 text-sm">Nenhum aluno cadastrado ainda.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {users.filter(u => u.type === 'aluno').map(student => (
+                      <button
+                        key={student.id}
+                        type="button"
+                        onClick={() => setSelectedStudentForPlan(student.id.toString())}
+                        className={`glass-panel p-3 rounded-xl text-left cursor-pointer border transition-all hover:border-white/40 ${
+                          selectedStudentForPlan === student.id.toString() 
+                            ? 'theme-selected-card' 
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="theme-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold border border-white/20 overflow-hidden flex-shrink-0">
+                            {student.photo && student.photo.trim() !== '' ? (
+                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
+                            ) : (
+                              student.name.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h5 className="font-semibold text-white text-sm truncate">{student.name}</h5>
+                            <p className="text-white/60 text-xs truncate">{student.email}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <h5 className="font-semibold text-white text-sm truncate">{student.name}</h5>
-                          <p className="text-white/60 text-xs truncate">{student.email}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1974,17 +2068,9 @@ export default function App() {
                 {progressStudents.length === 0 ? (
                   <p className="text-white/60 text-sm">Nenhum aluno vinculado ainda.</p>
                 ) : (
-                  <select
-                    value={selectedProgressUser?.id?.toString() || ''}
-                    onChange={e => setSelectedProgressStudentId(e.target.value)}
-                    className="glass-input w-full p-3 rounded-xl text-white bg-transparent"
-                  >
-                    {progressStudents.map(student => (
-                      <option key={student.id} value={student.id} className="text-black">
-                        {student.name} - {student.email}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="text-white/60 text-sm">
+                    Clique em um card abaixo para alternar entre os alunos.
+                  </p>
                 )}
               </div>
             )}
@@ -2231,14 +2317,17 @@ export default function App() {
                     />
                   </div>
                   <div className="flex gap-2">
-                    <select 
-                      className="glass-input px-4 py-2 rounded-xl text-sm text-white bg-transparent"
-                      value={exerciseSort}
-                      onChange={(e) => setExerciseSort(e.target.value)}
-                    >
-                      <option value="name" className="text-black">Nome (A-Z)</option>
-                      <option value="muscleGroup" className="text-black">Grupo Muscular</option>
-                    </select>
+                    {renderCustomSelect(
+                      'exercise-sort',
+                      exerciseSort,
+                      setExerciseSort,
+                      [
+                        { value: 'name', label: 'Nome (A-Z)' },
+                        { value: 'muscleGroup', label: 'Grupo Muscular' }
+                      ],
+                      'Ordenar por...',
+                      'glass-input px-4 py-2 rounded-xl text-sm min-w-44'
+                    )}
                   </div>
                 </div>
 
@@ -2560,12 +2649,15 @@ export default function App() {
             }} className="space-y-4">
               <div>
                 <label className="block text-white font-semibold mb-1">Exercício:</label>
-                <select required value={newPlanExercise.exerciseId} onChange={e => setNewPlanExercise({...newPlanExercise, exerciseId: e.target.value})} className="glass-input w-full p-3 rounded-xl">
-                  <option value="" className="text-black">Selecione um exercício...</option>
-                  {[...exercises].sort((a, b) => a.name.localeCompare(b.name)).map(ex => (
-                    <option key={ex.id} value={ex.id} className="text-black">{ex.name}</option>
-                  ))}
-                </select>
+                {renderCustomSelect(
+                  'plan-exercise',
+                  newPlanExercise.exerciseId,
+                  value => setNewPlanExercise({...newPlanExercise, exerciseId: value}),
+                  [...exercises]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(ex => ({ value: String(ex.id), label: ex.name })),
+                  'Selecione um exercicio...'
+                )}
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Meta de Repetições (opcional):</label>
@@ -2795,29 +2887,33 @@ export default function App() {
               {currentUser.type === 'admin' && (
                 <div>
                   <label className="block text-white font-semibold mb-1">Instrutor responsÃ¡vel:</label>
-                  <select required value={newStudent.instructorId} onChange={e => setNewStudent({...newStudent, instructorId: e.target.value})} className="glass-input w-full p-3 rounded-xl text-black">
-                    <option value="">Selecione um instrutor...</option>
-                    {instructors.map(instructor => {
+                  {renderCustomSelect(
+                    'new-student-instructor',
+                    newStudent.instructorId,
+                    value => setNewStudent({...newStudent, instructorId: value}),
+                    instructors.map(instructor => {
                       const studentCount = getInstructorStudentCount(instructor.id);
                       const studentLimit = Number(instructor.studentLimit) || 20;
-                      return (
-                        <option key={instructor.id} value={instructor.id} disabled={studentCount >= studentLimit}>
-                          {instructor.name} ({studentCount}/{studentLimit})
-                        </option>
-                      );
-                    })}
-                  </select>
+                      const isFull = studentCount >= studentLimit;
+                      return {
+                        value: String(instructor.id),
+                        label: instructor.name + ' (' + studentCount + '/' + studentLimit + ')' + (isFull ? ' - limite atingido' : ''),
+                        disabled: isFull
+                      };
+                    }),
+                    'Selecione um instrutor...'
+                  )}
                 </div>
               )}
               <div>
                 <label className="block text-white font-semibold mb-1">Objetivo:</label>
-                <select required value={newStudent.objective} onChange={e => setNewStudent({...newStudent, objective: e.target.value})} className="glass-input w-full p-3 rounded-xl text-black">
-                  <option value="hipertrofia">Hipertrofia</option>
-                  <option value="emagrecimento">Emagrecimento</option>
-                  <option value="forca">Força</option>
-                  <option value="resistencia">Resistência</option>
-                  <option value="saude">Saúde e Bem-estar</option>
-                </select>
+                {renderCustomSelect(
+                  'new-student-objective',
+                  newStudent.objective,
+                  value => setNewStudent({...newStudent, objective: value}),
+                  OBJECTIVE_OPTIONS,
+                  'Selecione um objetivo...'
+                )}
               </div>
               <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg mt-4">Salvar Aluno</button>
             </form>
@@ -2855,12 +2951,13 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-white font-semibold mb-2">Sensação geral:</label>
-                <select value={feedbackForm.feeling} onChange={e => setFeedbackForm({...feedbackForm, feeling: e.target.value})} className="glass-input w-full p-3 rounded-xl text-white bg-transparent">
-                  <option value="bem" className="text-black">Bem</option>
-                  <option value="cansado" className="text-black">Cansado</option>
-                  <option value="muito_bem" className="text-black">Muito bem</option>
-                  <option value="dor" className="text-black">Com dor/desconforto</option>
-                </select>
+                {renderCustomSelect(
+                  'feedback-feeling',
+                  feedbackForm.feeling,
+                  value => setFeedbackForm({...feedbackForm, feeling: value}),
+                  FEELING_OPTIONS,
+                  'Selecione como se sentiu...'
+                )}
               </div>
               <div>
                 <label className="block text-white font-semibold mb-1">Dor ou desconforto (opcional):</label>
