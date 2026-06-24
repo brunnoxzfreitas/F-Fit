@@ -92,6 +92,21 @@ db.exec(`
     FOREIGN KEY(workoutId) REFERENCES completed_workouts(id)
   );
 
+  CREATE TABLE IF NOT EXISTS physical_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    weight REAL,
+    height REAL,
+    waist REAL,
+    chest REAL,
+    arm REAL,
+    thigh REAL,
+    bodyFat REAL,
+    notes TEXT,
+    date TEXT NOT NULL,
+    FOREIGN KEY(userId) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS workout_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER NOT NULL,
@@ -170,6 +185,7 @@ try {
     CREATE INDEX IF NOT EXISTS idx_workout_logs_user ON workout_logs(userId);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_date ON workout_logs(date);
     CREATE INDEX IF NOT EXISTS idx_workout_feedback_user ON workout_feedback(userId);
+    CREATE INDEX IF NOT EXISTS idx_physical_assessments_user ON physical_assessments(userId);
     CREATE INDEX IF NOT EXISTS idx_workout_plans_student ON workout_plans(studentId);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_instructor ON users(instructorId);
@@ -465,6 +481,7 @@ async function startServer() {
       }
       db.transaction(() => {
         db.prepare("DELETE FROM workout_plans WHERE studentId = ?").run(userId);
+        db.prepare("DELETE FROM physical_assessments WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM workout_feedback WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM workout_logs WHERE userId = ?").run(userId);
         db.prepare("DELETE FROM completed_workouts WHERE userId = ?").run(userId);
@@ -602,6 +619,54 @@ async function startServer() {
       res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: 'Erro ao deletar feedback' });
+    }
+  });
+
+  // Physical Assessments
+  app.get("/api/physical-assessments", authenticate, (req, res) => {
+    try {
+      const requester = (req as any).user as { id: number, type: string };
+      const assessments = requester.type === 'admin'
+        ? db.prepare("SELECT * FROM physical_assessments ORDER BY date DESC").all()
+        : requester.type === 'instrutor'
+          ? db.prepare(`
+              SELECT pa.* FROM physical_assessments pa
+              JOIN users u ON u.id = pa.userId
+              WHERE u.instructorId = ?
+              ORDER BY pa.date DESC
+            `).all(requester.id)
+          : db.prepare("SELECT * FROM physical_assessments WHERE userId = ? ORDER BY date DESC").all(requester.id);
+      res.json(assessments);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao buscar avaliações físicas' });
+    }
+  });
+
+  app.post("/api/physical-assessments", authenticate, (req, res) => {
+    try {
+      const { userId, weight, height, waist, chest, arm, thigh, bodyFat, notes, date } = req.body;
+      if (!requireStudentAccess(Number(userId), req, res)) return;
+      const stmt = db.prepare(`
+        INSERT INTO physical_assessments (userId, weight, height, waist, chest, arm, thigh, bodyFat, notes, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const info = stmt.run(userId, weight || null, height || null, waist || null, chest || null, arm || null, thigh || null, bodyFat || null, notes || '', date);
+      const assessment = db.prepare("SELECT * FROM physical_assessments WHERE id = ?").get(info.lastInsertRowid);
+      res.json(assessment);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao salvar avaliação física' });
+    }
+  });
+
+  app.delete("/api/physical-assessments/:id", authenticate, (req, res) => {
+    try {
+      const assessment = db.prepare("SELECT userId FROM physical_assessments WHERE id = ?").get(req.params.id) as { userId: number } | undefined;
+      if (!assessment) return res.status(404).json({ error: 'Avaliação não encontrada' });
+      if (!requireStudentAccess(assessment.userId, req, res)) return;
+      db.prepare("DELETE FROM physical_assessments WHERE id = ?").run(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao deletar avaliação física' });
     }
   });
 

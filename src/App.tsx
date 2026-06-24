@@ -61,6 +61,7 @@ export default function App() {
   const [exercises, setExercises] = useState<any[]>([]);
   const [completedWorkouts, setCompletedWorkouts] = useState<any[]>([]);
   const [workoutFeedback, setWorkoutFeedback] = useState<any[]>([]);
+  const [physicalAssessments, setPhysicalAssessments] = useState<any[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<any[]>([]);
   const [workoutPlans, setWorkoutPlans] = useState<any[]>([]);
   const [individualWorkouts, setIndividualWorkouts] = useState<any[]>([]);
@@ -114,6 +115,8 @@ export default function App() {
   const [selectedProgressStudentId, setSelectedProgressStudentId] = useState('');
   const [feedbackModal, setFeedbackModal] = useState<any>(null);
   const [feedbackForm, setFeedbackForm] = useState({ difficulty: 'medio', feeling: 'bem', pain: '', notes: '' });
+  const [showAssessmentModal, setShowAssessmentModal] = useState(false);
+  const [assessmentForm, setAssessmentForm] = useState({ weight: '', height: '', waist: '', chest: '', arm: '', thigh: '', bodyFat: '', notes: '' });
 
   // Register state
   const [isRegistering, setIsRegistering] = useState(false);
@@ -207,6 +210,7 @@ export default function App() {
     loadArray('/api/workout-plans', setWorkoutPlans);
     loadArray('/api/workout-logs', setWorkoutLogs);
     loadArray('/api/workout-feedback', setWorkoutFeedback);
+    loadArray('/api/physical-assessments', setPhysicalAssessments);
   }, [currentUser, authToken]);
 
   useEffect(() => {
@@ -257,6 +261,7 @@ export default function App() {
       if (data.success) {
         setCurrentUser(data.user);
         setAuthToken(data.token);
+        setActiveTab(data.user.type === 'aluno' ? 'profile' : 'dashboard');
       } else {
         alert(data.message || 'Credenciais inválidas!');
       }
@@ -502,6 +507,43 @@ export default function App() {
       }
     } catch {
       alert('Erro ao salvar feedback.');
+    }
+  };
+
+  const handleSaveAssessment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProgressUser) return;
+
+    try {
+      const toNumber = (value: string) => value.trim() === '' ? null : Number(value);
+      const res = await fetch('/api/physical-assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({
+          userId: selectedProgressUser.id,
+          weight: toNumber(assessmentForm.weight),
+          height: toNumber(assessmentForm.height),
+          waist: toNumber(assessmentForm.waist),
+          chest: toNumber(assessmentForm.chest),
+          arm: toNumber(assessmentForm.arm),
+          thigh: toNumber(assessmentForm.thigh),
+          bodyFat: toNumber(assessmentForm.bodyFat),
+          notes: assessmentForm.notes,
+          date: new Date().toISOString()
+        })
+      });
+
+      if (res.ok) {
+        const assessment = await res.json();
+        setPhysicalAssessments([assessment, ...physicalAssessments]);
+        setAssessmentForm({ weight: '', height: '', waist: '', chest: '', arm: '', thigh: '', bodyFat: '', notes: '' });
+        setShowAssessmentModal(false);
+        alert('Avaliação física salva com sucesso!');
+      } else {
+        alert('Erro ao salvar avaliação física.');
+      }
+    } catch {
+      alert('Erro ao salvar avaliação física.');
     }
   };
 
@@ -882,7 +924,20 @@ export default function App() {
   const progressWorkoutFeedback = useMemo(() => (
     selectedProgressUserId ? workoutFeedback.filter(item => item.userId === selectedProgressUserId) : []
   ), [workoutFeedback, selectedProgressUserId]);
+  const progressAssessments = useMemo(() => (
+    selectedProgressUserId ? physicalAssessments.filter(item => item.userId === selectedProgressUserId) : []
+  ), [physicalAssessments, selectedProgressUserId]);
   const progressGoalPercent = Math.min(Math.round((progressCompletedWorkouts.length / 5) * 100), 100);
+  const recentFeedback = useMemo(() => workoutFeedback.slice(0, 4), [workoutFeedback]);
+  const inactiveStudents = useMemo(() => {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return progressStudents.filter(student => {
+      const lastWorkout = completedWorkouts
+        .filter(workout => workout.userId === student.id)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      return !lastWorkout || new Date(lastWorkout.date).getTime() < sevenDaysAgo;
+    });
+  }, [progressStudents, completedWorkouts]);
 
   if (!currentUser) {
     return (
@@ -1014,6 +1069,11 @@ export default function App() {
       </div>
 
       <div className="glass-panel rounded-full p-2 mb-6 sm:mb-8 flex flex-wrap justify-center gap-1 sm:gap-2 sticky top-4 z-40 mx-auto w-fit shadow-lg border border-white/20 backdrop-blur-xl">
+        {(currentUser.type === 'instrutor' || currentUser.type === 'admin') && (
+          <button onClick={() => setActiveTab('dashboard')} className={`nav-tab px-4 py-2 sm:px-6 sm:py-2.5 rounded-full flex items-center gap-2 text-sm sm:text-base font-semibold transition-all ${activeTab === 'dashboard' ? 'active' : ''}`}>
+            <Activity size={16} className="sm:w-[18px] sm:h-[18px]" /> <span>Dashboard</span>
+          </button>
+        )}
         <button onClick={() => setActiveTab('profile')} className={`nav-tab px-4 py-2 sm:px-6 sm:py-2.5 rounded-full flex items-center gap-2 text-sm sm:text-base font-semibold transition-all ${activeTab === 'profile' ? 'active' : ''}`}>
           <User size={16} className="sm:w-[18px] sm:h-[18px]" /> <span>Perfil</span>
         </button>
@@ -1031,6 +1091,76 @@ export default function App() {
       </div>
 
       <div className="mt-6 sm:mt-8">
+        {activeTab === 'dashboard' && (
+          <div className="glass-card p-5 sm:p-8 rounded-2xl">
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-6 flex items-center gap-2"><Activity /> Dashboard</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+              <div className="glass-panel p-5 rounded-xl">
+                <p className="text-white/60 text-sm font-semibold">Alunos ativos</p>
+                <div className="text-4xl font-black text-gradient mt-2">{progressStudents.length}</div>
+              </div>
+              <div className="glass-panel p-5 rounded-xl">
+                <p className="text-white/60 text-sm font-semibold">Treinos concluídos</p>
+                <div className="text-4xl font-black text-gradient mt-2">{completedWorkouts.length}</div>
+              </div>
+              <div className="glass-panel p-5 rounded-xl">
+                <p className="text-white/60 text-sm font-semibold">Feedbacks recebidos</p>
+                <div className="text-4xl font-black text-gradient mt-2">{workoutFeedback.length}</div>
+              </div>
+              <div className="glass-panel p-5 rounded-xl">
+                <p className="text-white/60 text-sm font-semibold">Sem treino há 7 dias</p>
+                <div className="text-4xl font-black text-gradient mt-2">{inactiveStudents.length}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="glass-panel p-5 rounded-xl">
+                <h4 className="text-lg font-bold text-white mb-4">Atenção do instrutor</h4>
+                {inactiveStudents.length === 0 ? (
+                  <p className="text-white/60 text-sm">Todos os alunos têm atividade recente.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {inactiveStudents.slice(0, 6).map(student => (
+                      <button
+                        key={student.id}
+                        type="button"
+                        onClick={() => { setSelectedProgressStudentId(student.id.toString()); setActiveTab('progress'); }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-left hover:border-white/30 transition-colors"
+                      >
+                        <p className="text-white font-bold">{student.name}</p>
+                        <p className="text-white/50 text-xs">Sem treino concluído nos últimos 7 dias</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="glass-panel p-5 rounded-xl">
+                <h4 className="text-lg font-bold text-white mb-4">Últimos feedbacks</h4>
+                {recentFeedback.length === 0 ? (
+                  <p className="text-white/60 text-sm">Nenhum feedback recebido ainda.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentFeedback.map(item => {
+                      const student = progressStudents.find(user => user.id === item.userId);
+                      return (
+                        <div key={item.id} className="bg-white/5 border border-white/10 rounded-lg p-3">
+                          <div className="flex justify-between gap-3">
+                            <p className="text-white font-bold">{student?.name || 'Aluno'}</p>
+                            <span className="text-white/50 text-xs">{new Date(item.date).toLocaleDateString('pt-BR')}</span>
+                          </div>
+                          <p className="text-white/70 text-sm mt-1">Dificuldade: {item.difficulty} • Sensação: {item.feeling}</p>
+                          {item.notes && <p className="text-white/55 text-xs mt-1">{item.notes}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'profile' && (
           <div className="glass-card p-5 sm:p-8 rounded-2xl">
             <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><User /> Meu Perfil</h3>
@@ -1838,6 +1968,41 @@ export default function App() {
               </div>
             </div>
 
+            <div className="mt-8 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <h4 className="text-xl font-bold text-white">Avaliação Física</h4>
+                <button onClick={() => setShowAssessmentModal(true)} className="btn-primary px-4 py-2 rounded-lg font-bold text-sm">
+                  Nova Avaliação
+                </button>
+              </div>
+              <div className="glass-panel p-4 sm:p-6 rounded-xl max-h-96 overflow-y-auto">
+                {progressAssessments.length === 0 ? (
+                  <p className="text-white/60 text-center py-4">Nenhuma avaliação física registrada ainda.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {progressAssessments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(item => (
+                      <div key={item.id} className="bg-white/5 p-4 rounded-lg border border-white/10">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                          <h5 className="font-bold text-white">{new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</h5>
+                          <span className="text-white/50 text-xs">Avaliação #{item.id}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Peso:</strong> {item.weight || '-'} kg</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Altura:</strong> {item.height || '-'} cm</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Cintura:</strong> {item.waist || '-'} cm</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Gordura:</strong> {item.bodyFat || '-'}%</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Peito:</strong> {item.chest || '-'} cm</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Braço:</strong> {item.arm || '-'} cm</div>
+                          <div className="bg-white/5 rounded-lg p-2"><strong>Coxa:</strong> {item.thigh || '-'} cm</div>
+                        </div>
+                        {item.notes && <p className="text-white/70 text-sm mt-3">{item.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="glass-panel p-6 sm:p-8 rounded-xl text-center">
                 <div className="text-5xl font-black text-gradient mb-4">
@@ -2597,6 +2762,55 @@ export default function App() {
                 <textarea value={feedbackForm.notes} onChange={e => setFeedbackForm({...feedbackForm, notes: e.target.value})} className="glass-input w-full p-3 rounded-xl" rows={3} placeholder="Conte como foi o treino, energia, dificuldade, carga..."></textarea>
               </div>
               <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg">Enviar Feedback</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAssessmentModal && selectedProgressUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-4">
+          <div className="glass-panel p-6 sm:p-8 rounded-[25px] w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setShowAssessmentModal(false)} className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-all">
+              <X size={24} />
+            </button>
+            <h2 className="text-xl sm:text-2xl font-bold text-center mb-2 text-white">Avaliação Física</h2>
+            <p className="text-white/60 text-center mb-6 text-sm">{selectedProgressUser.name}</p>
+            <form onSubmit={handleSaveAssessment} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-white font-semibold mb-1">Peso (kg):</label>
+                  <input type="number" step="0.1" value={assessmentForm.weight} onChange={e => setAssessmentForm({...assessmentForm, weight: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Ex: 78.5" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Altura (cm):</label>
+                  <input type="number" step="0.1" value={assessmentForm.height} onChange={e => setAssessmentForm({...assessmentForm, height: e.target.value})} className="glass-input w-full p-3 rounded-xl" placeholder="Ex: 175" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Cintura (cm):</label>
+                  <input type="number" step="0.1" value={assessmentForm.waist} onChange={e => setAssessmentForm({...assessmentForm, waist: e.target.value})} className="glass-input w-full p-3 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Peito (cm):</label>
+                  <input type="number" step="0.1" value={assessmentForm.chest} onChange={e => setAssessmentForm({...assessmentForm, chest: e.target.value})} className="glass-input w-full p-3 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Braço (cm):</label>
+                  <input type="number" step="0.1" value={assessmentForm.arm} onChange={e => setAssessmentForm({...assessmentForm, arm: e.target.value})} className="glass-input w-full p-3 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Coxa (cm):</label>
+                  <input type="number" step="0.1" value={assessmentForm.thigh} onChange={e => setAssessmentForm({...assessmentForm, thigh: e.target.value})} className="glass-input w-full p-3 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-1">Gordura corporal (%):</label>
+                  <input type="number" step="0.1" value={assessmentForm.bodyFat} onChange={e => setAssessmentForm({...assessmentForm, bodyFat: e.target.value})} className="glass-input w-full p-3 rounded-xl" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-white font-semibold mb-1">Observações:</label>
+                <textarea value={assessmentForm.notes} onChange={e => setAssessmentForm({...assessmentForm, notes: e.target.value})} className="glass-input w-full p-3 rounded-xl" rows={3} placeholder="Postura, objetivo, fotos, recomendações..."></textarea>
+              </div>
+              <button type="submit" className="btn-primary w-full py-3 rounded-xl font-bold text-lg">Salvar Avaliação</button>
             </form>
           </div>
         </div>
